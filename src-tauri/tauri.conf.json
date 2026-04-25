@@ -1,7 +1,7 @@
 {
   "productName": "easySTT",
   "version": "0.1.0",
-  "identifier": "com.easystt.app",
+  "identifier": "com.easystt.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
