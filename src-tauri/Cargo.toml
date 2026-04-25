@@ -1,0 +1,49 @@
+[package]
+name = "easystt"
+version = "0.1.0"
+description = "Speech to text utility"
+authors = []
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.88.0"
+
+[lib]
+name = "easystt_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-store = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["multipart", "json"] }
+cpal = "0.15"
+enigo = "0.2"
+arboard = "3"
+anyhow = "1"
+dirs = "5"
+base64 = "0.22"
+async-trait = "0.1"
+
+# Optional: local whisper inference (requires whisper.cpp to be installed)
+# Uncomment when ready to enable local STT:
+# whisper-rs = { version = "0.12", optional = true }
+
+[features]
+default = []
+local-stt = []
+# local-stt = ["whisper-rs"]
+
+[profile.release]
+opt-level = "s"   # optimize for binary size
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

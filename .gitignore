@@ -1,0 +1,26 @@
+# Rust/Cargo
+target/
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+
+# Tauri generated
+src-tauri/gen/
+
+# Environment
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Claude
+.claude/settings.local.json

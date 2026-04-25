@@ -1,0 +1,138 @@
+.widget {
+  width: 220px;
+  height: 90px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px;
+  cursor: move;
+}
+
+.widget-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8892a4;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.settings-btn {
+  background: none;
+  color: #8892a4;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.settings-btn:hover {
+  color: #eaeaea;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.widget-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 8px;
+}
+
+/* Record button */
+.record-btn {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #0f3460, #16213e);
+  border: 2px solid #2a2a4a;
+  color: #eaeaea;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.record-btn:hover:not(:disabled) {
+  border-color: #e94560;
+  background: linear-gradient(145deg, #1a1a2e, #0f3460);
+  box-shadow: 0 4px 18px rgba(233, 69, 96, 0.3);
+  transform: scale(1.04);
+}
+.record-btn:active:not(:disabled),
+.record-btn.recording {
+  background: linear-gradient(145deg, #e94560, #c73652);
+  border-color: #e94560;
+  box-shadow: 0 4px 20px rgba(233, 69, 96, 0.5);
+  transform: scale(0.97);
+}
+.record-btn.transcribing {
+  background: linear-gradient(145deg, #f0a500, #d4920a);
+  border-color: #f0a500;
+  box-shadow: 0 4px 18px rgba(240, 165, 0, 0.4);
+}
+.record-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.record-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.record-label {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+/* Pulse animation when recording */
+.pulse-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(233, 69, 96, 0.6);
+  animation: pulse 1.2s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+/* Status text */
+.status-ok,
+.status-error {
+  flex: 1;
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+.status-ok {
+  color: #4caf82;
+  background: rgba(76, 175, 130, 0.12);
+}
+.status-error {
+  color: #e94560;
+  background: rgba(233, 69, 96, 0.12);
+  cursor: help;
+}
