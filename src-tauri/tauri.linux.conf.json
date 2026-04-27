@@ -1,0 +1,43 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "widget",
+        "title": "easySTT",
+        "width": 320,
+        "height": 120,
+        "minWidth": 200,
+        "minHeight": 80,
+        "maxWidth": 720,
+        "maxHeight": 420,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "skipTaskbar": false,
+        "shadow": false,
+        "center": false,
+        "x": 100,
+        "y": 100,
+        "visible": true,
+        "focus": true
+      },
+      {
+        "label": "settings",
+        "title": "easySTT — Настройки",
+        "backgroundColor": "#0c1020",
+        "width": 520,
+        "height": 580,
+        "minWidth": 420,
+        "minHeight": 480,
+        "resizable": true,
+        "alwaysOnTop": false,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false,
+        "visible": false,
+        "center": true
+      }
+    ]
+  }
+}

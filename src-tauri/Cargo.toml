@@ -1,0 +1,64 @@
+[package]
+name = "easystt"
+version = "0.1.0"
+description = "Speech to text utility"
+authors = []
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.88.0"
+
+[lib]
+name = "easystt_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-store = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["multipart", "json", "stream"] }
+futures-util = "0.3"
+cpal = "0.15"
+enigo = "0.2"
+arboard = "3"
+anyhow = "1"
+dirs = "5"
+base64 = "0.22"
+async-trait = "0.1"
+whisper-rs = { version = "0.14" }
+tauri-plugin-single-instance = "2"
+
+# Win32: HWND region (rounded widget window). Keep version aligned with tauri 2.10+.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[features]
+default = []
+## Локальный Whisper на GPU: включите ровно один (сборка потребует на машине драйверы/тулчейн).
+# NVIDIA — Linux/Windows, нужен CUDA Toolkit (nvcc) для линковки
+whisper-cuda = ["whisper-rs/cuda"]
+# Кросс‑вендор (часто Linux, зависит от драйвера; может работать вместо CUDA)
+whisper-vulkan = ["whisper-rs/vulkan"]
+# Только macOS, Apple GPU
+whisper-metal = ["whisper-rs/metal"]
+local-stt = []
+
+[profile.release]
+# Local Whisper is CPU-bound; "s" (size) heavily slows inference. Prefer speed.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

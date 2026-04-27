@@ -1,0 +1,787 @@
+.widget {
+  /* Системный «строгий» мини-UI: 4px-сетка, сдержанные тени; градиент/волна без смены палитры */
+  --ui-pad: 8px;
+  --ui-pad-tight: 4px;
+  --ui-r-sm: 3px;
+  --ui-r-md: 5px;
+  /* Container for cqw/cqh so the wave + motion follow window resize, not a fixed "blob" */
+  --w-bg-from: #12121f;
+  --w-bg-to: #1a1a2e;
+  --w-w1: #4c84ff;
+  --w-w2: #c762ff;
+  --w-w3: #ff65a7;
+  /* внутренняя подсветка к краям цвета виджета */
+  --w-mid: color-mix(in srgb, var(--w-bg-to) 78%, var(--w-w1) 22%);
+  /* чёткая типографика (мелкий UI) */
+  font-family: system-ui, "Segoe UI", "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: geometricPrecision;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  color: #d8deec;
+  container-type: size;
+  container-name: widget;
+  width: 100%;
+  /* высота: flex:1 в колонке #root (см. index.css) + min-height:0 */
+  /* многослой: блик сверху (по центру, без пятна слева), основной градиент, низ */
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 5.5%, transparent) 0%,
+      color-mix(in srgb, white 1.5%, transparent) 12%,
+      transparent 32%
+    ),
+    radial-gradient(
+      ellipse 100% 85% at 50% -2%,
+      color-mix(in srgb, var(--w-w1) 9%, transparent) 0%,
+      color-mix(in srgb, var(--w-w2) 5%, transparent) 32%,
+      color-mix(in srgb, var(--w-w3) 4%, transparent) 48%,
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 120% 55% at 50% 105%,
+      color-mix(in srgb, black 28%, var(--w-bg-to)) 0%,
+      transparent 52%
+    ),
+    /* без утяжеления левого верхнего угла: старт с --w-mid, не с самого тёмного --w-bg-from */
+    linear-gradient(
+      155deg,
+      var(--w-mid) 0%,
+      var(--w-mid) 18%,
+      var(--w-bg-to) 58%,
+      color-mix(in srgb, var(--w-bg-to) 88%, var(--w-w2) 12%) 100%
+    );
+  background-color: var(--w-bg-to);
+  /* 1px border рисует субпиксельную кайму (часто top/left) в прозрачном Tauri-окне — только inset-кольцо */
+  border: 0;
+  border-radius: var(--widget-corners, 0);
+  /* Без внешней box-shadow (прямоугольник на прозрачном Win) и без filter (лишний композит). */
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, white 6%, transparent);
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  /* screen/soft-light на псевдо-элементах иначе смешивается с DWM (Win) → чёрные клинки у rrect */
+  isolation: isolate;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  /* перетаскивание окна: startDragging() в TS; курсор по всему фону, кроме кнопок/ручек (ниже) */
+  cursor: move;
+  /* Бесшовные маски: slope=0 на обоих краях → нет рывка при зацикливании.
+     rolling — 2 симметричных горба; smooth — 1 плавная впадина; line — почти плоская черта */
+  --wave-rolling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0%200%201040%2056' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0%200%20h1040%20v22%20C953%2022%20867%2050%20780%2050%20C693%2050%20607%2022%20520%2022%20C433%2022%20347%2050%20260%2050%20C173%2050%2087%2022%200%2022%20Z'/%3E%3C/svg%3E");
+  --wave-smooth: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0%200%201040%2052' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0%200%20h1040%20v12%20C866%2012%20694%2046%20520%2046%20C346%2046%20174%2012%200%2012%20Z'/%3E%3C/svg%3E");
+  --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0%200%201040%2022' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0%200%20h1040%20v8%20C866%208%20694%2016%20520%2016%20C346%2016%20174%208%200%208%20Z'/%3E%3C/svg%3E");
+  --wave-mask: var(--wave-rolling);
+}
+.widget.widget-wave--smooth {
+  --wave-mask: var(--wave-smooth);
+}
+.widget.widget-wave--line {
+  --wave-mask: var(--wave-line);
+}
+.widget::before,
+.widget::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* 100%: шире 100% + rrect + mix-blend даёт тёмные/чёрные углы (WebView2) */
+  width: 100%;
+  max-width: 100%;
+  height: clamp(28px, 40cqh, 104px);
+  margin-inline: auto;
+  border-radius: var(--widget-corners, 0) var(--widget-corners, 0) 0 0;
+  -webkit-mask-image: var(--wave-mask);
+  mask-image: var(--wave-mask);
+  /* 200%: два одинаковых периода в SVG → бесшовный цикл при 0%→100% mask-position */
+  -webkit-mask-size: 200% 100%;
+  mask-size: 200% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0% bottom;
+  mask-position: 0% bottom;
+  transform-origin: 50% 0;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, filter, background-position, mask-position;
+}
+.widget::before {
+  /* широкий горизонтальный градиент + pan: заметный «перелив» волной (симметрия по X) */
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 6%, transparent) 0%,
+      transparent 20%
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--w-w1) 0%, transparent) 0%,
+      color-mix(in srgb, var(--w-w1) 28%, transparent) 12%,
+      color-mix(in srgb, var(--w-w2) 40%, transparent) 36%,
+      color-mix(in srgb, var(--w-w3) 44%, transparent) 50%,
+      color-mix(in srgb, var(--w-w2) 40%, transparent) 64%,
+      color-mix(in srgb, var(--w-w1) 28%, transparent) 88%,
+      color-mix(in srgb, var(--w-w1) 0%, transparent) 100%
+    );
+  background-size: 100% 100%, 280% 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, 50% 50%;
+  mix-blend-mode: normal;
+  opacity: 0.55;
+  /* filter в keyframes; статичный filter вырезан — иначе лишний offscreen на слое */
+}
+.widget::after {
+  /* второй слой — мягкий «блик», движется вразбой с верхним */
+  background:
+    radial-gradient(
+      ellipse 70% 90% at 50% 0%,
+      color-mix(in srgb, var(--w-w1) 22%, transparent) 0%,
+      color-mix(in srgb, var(--w-w2) 10%, transparent) 38%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 55% 75% at 50% 22%,
+      color-mix(in srgb, var(--w-w3) 24%, transparent) 0%,
+      color-mix(in srgb, var(--w-w1) 14%, transparent) 35%,
+      color-mix(in srgb, var(--w-w3) 0%, transparent) 72%
+    );
+  background-blend-mode: screen, normal;
+  mix-blend-mode: normal;
+  opacity: 0.45;
+}
+/* Анимации волны: flow — как раньше; breathe — мягче и дольше; static — без движения */
+.widget.widget-anim--flow::before {
+  animation:
+    gradient-wave-a 5.4s ease-in-out infinite,
+    wave-scroll-a 11s linear infinite;
+}
+.widget.widget-anim--flow::after {
+  animation:
+    gradient-wave-b 6.8s ease-in-out infinite,
+    wave-scroll-b 14s linear infinite;
+}
+.widget.widget-anim--breathe::before {
+  animation:
+    gradient-wave-a-breathe 7.6s ease-in-out infinite,
+    wave-scroll-a 20s linear infinite;
+}
+.widget.widget-anim--breathe::after {
+  animation:
+    gradient-wave-b-breathe 8.2s ease-in-out infinite,
+    wave-scroll-b 22s linear infinite;
+}
+.widget.widget-anim--static::before,
+.widget.widget-anim--static::after {
+  animation: none;
+  will-change: auto;
+}
+
+/* ── Aurora: волна скрыта, вместо неё плавающие цветные орбы ── */
+.widget.widget-anim--aurora::before,
+.widget.widget-anim--aurora::after {
+  opacity: 0;
+  animation: none;
+  will-change: auto;
+}
+
+/* Слой доп. эффектов: нейтральный по умолчанию, активируется классами */
+.widget-fx {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.widget-anim--aurora .widget-fx::before,
+.widget-anim--aurora .widget-fx::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+.widget-anim--aurora .widget-fx::before {
+  width: 90px;
+  height: 70px;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--w-w1) 55%, transparent) 0%,
+    color-mix(in srgb, var(--w-w2) 25%, transparent) 45%,
+    transparent 100%
+  );
+  top: -18px;
+  left: -12px;
+  filter: blur(20px);
+  animation: aurora-orb-1 8s ease-in-out infinite;
+}
+
+.widget-anim--aurora .widget-fx::after {
+  width: 75px;
+  height: 60px;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--w-w3) 50%, transparent) 0%,
+    color-mix(in srgb, var(--w-w2) 22%, transparent) 45%,
+    transparent 100%
+  );
+  bottom: -16px;
+  right: -10px;
+  filter: blur(18px);
+  animation: aurora-orb-2 10s ease-in-out infinite;
+}
+
+@keyframes aurora-orb-1 {
+  0%, 100% { transform: translate(0, 0) scale(1);    opacity: 0.78; }
+  30%       { transform: translate(38px, 22px) scale(1.14); opacity: 1; }
+  65%       { transform: translate(18px, -10px) scale(0.9); opacity: 0.6; }
+}
+@keyframes aurora-orb-2 {
+  0%, 100% { transform: translate(0, 0) scale(1);     opacity: 0.68; }
+  35%       { transform: translate(-32px, -20px) scale(1.1); opacity: 0.9; }
+  70%       { transform: translate(-12px, 12px) scale(0.86); opacity: 0.5; }
+}
+
+/* ── Запись: пульс рамки + тёплые цвета волны + ускорение ── */
+.widget.is-recording {
+  --w-w1: #ff3550;
+  --w-w2: #ff7530;
+  --w-w3: #ffb018;
+  animation: rec-border-pulse 1.25s ease-in-out infinite;
+}
+@keyframes rec-border-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 0.75px rgba(233, 55, 80, 0.45),
+      0 0 8px  rgba(233, 55, 80, 0.07);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1.5px rgba(233, 55, 80, 0.88),
+      0 0 18px rgba(233, 55, 80, 0.22),
+      0 0 0 2px rgba(233, 55, 80, 0.14);
+  }
+}
+
+/* Ускорение волны во время записи */
+.widget.is-recording.widget-anim--flow::before {
+  animation:
+    gradient-wave-a 2.8s ease-in-out infinite,
+    wave-scroll-a 5.5s linear infinite;
+}
+.widget.is-recording.widget-anim--flow::after {
+  animation:
+    gradient-wave-b 3.6s ease-in-out infinite,
+    wave-scroll-b 7s linear infinite;
+}
+.widget.is-recording.widget-anim--breathe::before {
+  animation:
+    gradient-wave-a 3.6s ease-in-out infinite,
+    wave-scroll-a 8s linear infinite;
+}
+.widget.is-recording.widget-anim--breathe::after {
+  animation:
+    gradient-wave-b 4.4s ease-in-out infinite,
+    wave-scroll-b 9.5s linear infinite;
+}
+/* В aurora-режиме орбы тоже меняют цвет (через CSS vars) и слегка ускоряются */
+.widget.is-recording.widget-anim--aurora .widget-fx::before {
+  animation: aurora-orb-1 4.5s ease-in-out infinite;
+}
+.widget.is-recording.widget-anim--aurora .widget-fx::after {
+  animation: aurora-orb-2 5.5s ease-in-out infinite;
+}
+@keyframes wave-scroll-a {
+  0% {
+    -webkit-mask-position: 0% bottom;
+    mask-position: 0% bottom;
+  }
+  100% {
+    -webkit-mask-position: 100% bottom;
+    mask-position: 100% bottom;
+  }
+}
+@keyframes wave-scroll-b {
+  0% {
+    -webkit-mask-position: 100% bottom;
+    mask-position: 100% bottom;
+  }
+  100% {
+    -webkit-mask-position: 0% bottom;
+    mask-position: 0% bottom;
+  }
+}
+.widget-animated-in {
+  animation: widget-in 220ms ease-out;
+}
+@keyframes widget-in {
+  from { transform: translateY(6px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes gradient-wave-a {
+  0%, 100% {
+    transform: translateX(-0.65cqw) translateY(0) scale(1, 1.02);
+    background-position: 0 0, 22% 50%;
+    filter: saturate(1.1) hue-rotate(0deg) brightness(1);
+  }
+  50% {
+    transform: translateX(0.65cqw) translateY(0.45cqh) scale(1, 1.06);
+    background-position: 0 0, 78% 50%;
+    filter: saturate(1.16) hue-rotate(26deg) brightness(1.04);
+  }
+}
+@keyframes gradient-wave-b {
+  0%, 100% {
+    transform: translateX(0.45cqw) translateY(0.08cqh) scale(1, 1.01);
+    filter: saturate(1.06) brightness(1.02) hue-rotate(0deg);
+  }
+  50% {
+    transform: translateX(-0.45cqw) translateY(0.42cqh) scale(1, 0.99);
+    filter: saturate(1.12) brightness(1.04) hue-rotate(-18deg);
+  }
+}
+@keyframes gradient-wave-a-breathe {
+  0%, 100% {
+    transform: translateX(-0.3cqw) translateY(0) scale(1, 1.01);
+    background-position: 0 0, 32% 50%;
+    filter: saturate(1.04) hue-rotate(0deg) brightness(1);
+  }
+  50% {
+    transform: translateX(0.3cqw) translateY(0.18cqh) scale(1, 1.03);
+    background-position: 0 0, 68% 50%;
+    filter: saturate(1.08) hue-rotate(10deg) brightness(1.02);
+  }
+}
+@keyframes gradient-wave-b-breathe {
+  0%, 100% {
+    transform: translateX(0.2cqw) translateY(0.04cqh) scale(1, 1);
+    filter: saturate(1.03) brightness(1.01) hue-rotate(0deg);
+  }
+  50% {
+    transform: translateX(-0.2cqw) translateY(0.2cqh) scale(1, 0.995);
+    filter: saturate(1.05) brightness(1.02) hue-rotate(-8deg);
+  }
+}
+
+/* Без рамки ОС — ручки изменения размера (Tauri startResizeDragging) */
+.widget-resize {
+  position: absolute;
+  z-index: 40;
+  pointer-events: auto;
+}
+.widget-resize--edge {
+  background: transparent;
+}
+.widget-resize--corner {
+  width: 14px;
+  height: 14px;
+}
+.widget-resize--n {
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 6px;
+  cursor: n-resize;
+}
+.widget-resize--s {
+  bottom: 0;
+  left: 14px;
+  right: 14px;
+  height: 6px;
+  cursor: s-resize;
+}
+.widget-resize--e {
+  right: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 6px;
+  cursor: e-resize;
+}
+.widget-resize--w {
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 6px;
+  cursor: w-resize;
+}
+.widget-resize--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.widget-resize--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.widget-resize--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.widget-resize--se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: var(--ui-pad-tight) var(--ui-pad) var(--ui-pad-tight) var(--ui-pad);
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 24px;
+}
+
+.widget-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b8c5d8;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: none;
+  font-synthesis: weight;
+}
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: #7a8a9d;
+  font-size: 11px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--ui-r-sm);
+  transition: color 0.12s, background 0.12s;
+  line-height: 1;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
+.minimize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: #7a8a9d;
+  font-size: 12px;
+  font-weight: 600;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--ui-r-sm);
+  transition: color 0.12s, background 0.12s;
+  line-height: 1;
+}
+.minimize-btn:hover {
+  color: #c0cad6;
+  background: rgba(255, 255, 255, 0.04);
+}
+.close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: #7a8a9d;
+  font-size: 10px;
+  font-weight: 600;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--ui-r-sm);
+  transition: color 0.12s, background 0.12s;
+  line-height: 1;
+}
+.close-btn:hover {
+  color: #e8788f;
+  background: rgba(233, 69, 96, 0.1);
+}
+.settings-btn:hover {
+  color: #c0cad6;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.widget-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--ui-pad) 8px var(--ui-pad);
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.widget-body-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* ── Error label + hover tooltip ── */
+.status-error-title {
+  font-size: 11px;
+  color: #e86878;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.status-error-fallback {
+  font-size: 11px;
+  color: #e86878;
+  font-weight: 600;
+}
+
+.error-tooltip-trigger {
+  cursor: default;
+}
+.error-tooltip-trigger::after {
+  content: " ▸";
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+/* Tooltip is a sibling of .widget-body-row, absolutely positioned inside .widget-body.
+   Visibility is controlled by JS state (hover-bridge with 120ms hide delay) to avoid
+   the CSS :has() flicker when the tooltip overlaps the trigger element. */
+.error-tooltip {
+  position: absolute;
+  inset: 6px 10px;
+  overflow-y: auto;
+  background: rgba(18, 8, 24, 0.97);
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #f0b4bc;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  z-index: 50;
+  animation: tooltip-in 0.12s ease;
+}
+@keyframes tooltip-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Record button ── */
+.record-btn {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #1a2135 0%, #0f121c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e6eaf2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.record-btn:hover:not(:disabled) {
+  border-color: rgba(200, 210, 230, 0.22);
+  background: linear-gradient(160deg, #1c2438 0%, #121622 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 3px 12px rgba(0, 0, 0, 0.5);
+}
+.record-btn.recording {
+  background: linear-gradient(160deg, #a51228 0%, #6a0a18 100%);
+  border-color: rgba(233, 69, 96, 0.5);
+  box-shadow: 0 1px 0 rgba(255, 100, 120, 0.2) inset, 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+.record-btn.transcribing {
+  background: linear-gradient(160deg, #8a6210 0%, #4d3a0a 100%);
+  border-color: rgba(200, 150, 40, 0.4);
+  box-shadow: 0 1px 0 rgba(255, 200, 80, 0.1) inset, 0 2px 8px rgba(0, 0, 0, 0.5);
+  cursor: not-allowed;
+}
+
+.record-icon {
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ── Pulse rings when recording ── */
+.pulse-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  animation: pulse-out 1.4s ease-out infinite;
+  pointer-events: none;
+}
+.pulse-ring-2 {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid rgba(233, 69, 96, 0.25);
+  animation: pulse-out 1.4s ease-out 0.5s infinite;
+  pointer-events: none;
+}
+@keyframes pulse-out {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ── Right-side status area ── */
+.widget-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  animation: status-fade 150ms ease-out;
+}
+@keyframes status-fade {
+  from { opacity: 0.5; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.status-hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8a9ab0;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+/* ── Sound wave bars (recording) ── */
+.wave-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+}
+.wave-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: #e94560;
+  animation: wave-anim 0.75s ease-in-out infinite;
+}
+.wave-bar:nth-child(1) { animation-delay: 0.00s; height: 6px; }
+.wave-bar:nth-child(2) { animation-delay: 0.12s; height: 14px; }
+.wave-bar:nth-child(3) { animation-delay: 0.24s; height: 20px; }
+.wave-bar:nth-child(4) { animation-delay: 0.12s; height: 14px; }
+.wave-bar:nth-child(5) { animation-delay: 0.00s; height: 6px; }
+@keyframes wave-anim {
+  0%, 100% { transform: scaleY(0.3); opacity: 0.5; }
+  50%       { transform: scaleY(1);   opacity: 1; }
+}
+
+.recording-timer {
+  font-size: 11px;
+  color: #e45a6f;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* ── Transcribing dots ── */
+.dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 22px;
+  flex-shrink: 0;
+}
+.transcribe-row .dots {
+  /* одна визуальная линия с текстом + кнопкой */
+  align-items: center;
+  height: auto;
+}
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f0a500;
+  animation: dot-bounce 1s ease-in-out infinite;
+}
+.dot:nth-child(2) { animation-delay: 0.15s; }
+.dot:nth-child(3) { animation-delay: 0.30s; }
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+.transcribing-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #d4a84a;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* Один ряд: точки — текст — отмена, общая ось Baseline/центр */
+.transcribe-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 24px;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.2;
+}
+
+.btn-cancel-transcribe {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.2;
+  margin: 0;
+  height: 20px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: var(--ui-r-md);
+  border: 1px solid rgba(200, 160, 60, 0.35);
+  background: rgba(200, 150, 50, 0.08);
+  color: #d9a11a;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-cancel-transcribe:hover {
+  background: rgba(200, 150, 50, 0.14);
+  border-color: rgba(200, 160, 60, 0.5);
+}
+
+/* ── Success / error title (текст ошибки — в .widget-error-panel) ── */
+.status-ok {
+  font-size: 11px;
+  color: #5ed49a;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

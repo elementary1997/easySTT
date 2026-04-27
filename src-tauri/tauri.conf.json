@@ -1,0 +1,108 @@
+{
+  "productName": "easySTT",
+  "version": "0.1.0",
+  "identifier": "com.easystt.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "widget",
+        "title": "easySTT",
+        "backgroundColor": "#1a1a2e",
+        "width": 320,
+        "height": 120,
+        "minWidth": 200,
+        "minHeight": 80,
+        "maxWidth": 720,
+        "maxHeight": 420,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": false,
+        "skipTaskbar": false,
+        "shadow": false,
+        "center": false,
+        "x": 100,
+        "y": 100,
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "indicator",
+        "title": "easySTT Recording",
+        "width": 180,
+        "height": 44,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "settings",
+        "title": "easySTT — Настройки",
+        "backgroundColor": "#0c1020",
+        "width": 520,
+        "height": 580,
+        "minWidth": 420,
+        "minHeight": 480,
+        "maxWidth": 700,
+        "maxHeight": 720,
+        "resizable": true,
+        "alwaysOnTop": false,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false,
+        "visible": false,
+        "center": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "category": "Utility",
+    "shortDescription": "Speech to text for any window",
+    "longDescription": "Convert speech to text and insert into any active window",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Russian"]
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "libxdo3"
+        ],
+        "section": "utils",
+        "priority": "optional",
+        "files": {
+          "/usr/share/applications/easySTT.desktop": "easySTT.desktop"
+        }
+      }
+    }
+  }
+}

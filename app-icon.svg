@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <title>easySTT</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d5a8c"/>
+      <stop offset="50%" stop-color="#5a3d7a"/>
+      <stop offset="100%" stop-color="#12121f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="200" fill="url(#bg)"/>
+  <!-- Микрофон: гриль + стойка + основание -->
+  <g fill="#f0f4ff" transform="translate(512, 500)">
+    <rect x="-56" y="-200" width="112" height="200" rx="50"/>
+    <rect x="-6" y="-200" width="12" height="200" fill="#2a1f3d" fill-opacity="0.35" rx="4"/>
+    <rect x="-20" y="0" width="40" height="90" rx="8"/>
+    <rect x="-130" y="100" width="260" height="40" rx="10"/>
+  </g>
+  <!-- Волна внизу (бренд) -->
+  <path
+    d="M120 800 Q 320 720 512 750 T 904 800"
+    stroke="#7a9ed4"
+    stroke-width="20"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.5"
+  />
+</svg>

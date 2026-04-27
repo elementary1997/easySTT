@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=easySTT
+GenericName=Speech to Text
+Comment=Распознавание речи и вставка текста в любое окно
+Exec=easystt
+Icon=easystt
+Terminal=false
+Categories=Utility;Accessibility;AudioVideo;
+Keywords=speech;voice;stt;whisper;dictation;голос;речь;
+StartupNotify=true
+StartupWMClass=easySTT

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru" style="background-color: #1a1a2e">
+  <head>
+    <script>
+      (function () {
+        try {
+          var label = window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+          if (label === "indicator") {
+            // Indicator window: must be fully transparent from the very first frame
+            document.documentElement.classList.add("indicator-surface");
+            document.documentElement.style.background = "transparent";
+            document.documentElement.style.backgroundColor = "transparent";
+          } else {
+            // Widget / settings: dark background to avoid black flash before React paints
+            document.documentElement.style.backgroundColor = "#1a1a2e";
+          }
+        } catch (e) {
+          document.documentElement.style.backgroundColor = "#1a1a2e";
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" type="image/png" sizes="128x128" href="/favicon-128.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>easySTT</title>
+  </head>
+  <body style="background-color: #1a1a2e">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

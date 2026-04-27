@@ -1,0 +1,29 @@
+# Rust/Cargo
+target/
+# Reproducible app builds: keep src-tauri/Cargo.lock in git
+
+# Node
+node_modules/
+dist/
+
+# Tauri generated
+src-tauri/gen/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Build output / ad-hoc artifacts
+build-artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Claude
+.claude/settings.local.json
