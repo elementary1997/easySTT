@@ -7,6 +7,24 @@ import "./SettingsPanel.css";
 
 type Tab = "general" | "look" | "backend" | "hotkey";
 
+const TRANSLATE_LANGS: [string, string][] = [
+  ["en", "English"],
+  ["ru", "Русский"],
+  ["de", "Deutsch"],
+  ["fr", "Français"],
+  ["es", "Español"],
+  ["zh", "中文"],
+  ["ja", "日本語"],
+  ["ko", "한국어"],
+  ["ar", "العربية"],
+  ["it", "Italiano"],
+  ["pt", "Português"],
+  ["nl", "Nederlands"],
+  ["pl", "Polski"],
+  ["tr", "Türkçe"],
+  ["uk", "Українська"],
+];
+
 
 type ModelInfo = {
   id: string;
@@ -693,6 +711,55 @@ export default function SettingsPanel() {
                   <p className="hint">Папка моделей: <code>{modelsDir}</code></p>
                 )}
 
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === "backend" && (
+          <div className="section">
+            <div className="field field-row-label">
+              <span className="field-label">Перевод в реальном времени</span>
+            </div>
+
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={config.translateEnabled}
+                onChange={(e) => update("translateEnabled", e.target.checked)}
+              />
+              <span>Переводить речь на другой язык</span>
+            </label>
+
+            {config.translateEnabled && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <label className="field">
+                    <span className="field-label">Язык речи (откуда)</span>
+                    <select value={config.translateFrom} onChange={(e) => update("translateFrom", e.target.value)}>
+                      <option value="auto">Авто (определить)</option>
+                      {TRANSLATE_LANGS.map(([code, name]) => (
+                        <option key={code} value={code}>{name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Язык текста (куда)</span>
+                    <select value={config.translateTo} onChange={(e) => update("translateTo", e.target.value)}>
+                      {TRANSLATE_LANGS.map(([code, name]) => (
+                        <option key={code} value={code}>{name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <p className="hint">
+                  {config.sttBackend === "local" && config.translateTo === "en"
+                    ? "✓ Встроенный перевод Whisper → English (бесплатно, без API-ключа)."
+                    : config.openrouterApiKey
+                      ? `✓ Перевод через OpenRouter GPT-4o mini (${config.translateFrom === "auto" ? "авто" : config.translateFrom} → ${config.translateTo}).`
+                      : "⚠ Для перевода на этот язык нужен API-ключ OpenRouter. Добавьте его выше в разделе «OpenRouter», затем сохраните."}
+                </p>
               </>
             )}
           </div>

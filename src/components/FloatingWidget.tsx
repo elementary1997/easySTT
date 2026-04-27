@@ -273,7 +273,16 @@ export default function FloatingWidget() {
               </div>
             )}
             {state === "idle" && !lastText && (
-              <span className="status-hint">Удерживай для&nbsp;записи</span>
+              <span className="status-hint">
+                Удерживай для&nbsp;записи
+                {widgetConfig.translateEnabled && (
+                  <span className="translate-badge">
+                    {widgetConfig.translateFrom === "auto" ? "auto" : widgetConfig.translateFrom}
+                    {" → "}
+                    {widgetConfig.translateTo}
+                  </span>
+                )}
+              </span>
             )}
             {state === "idle" && lastText && (
               <span className="status-ok">✓ Вставлено</span>

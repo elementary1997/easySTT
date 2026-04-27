@@ -43,6 +43,12 @@ fn def_widget_wave_form() -> String {
 fn def_widget_corner_style() -> String {
     "none".to_string()
 }
+fn def_translate_from() -> String {
+    "auto".to_string()
+}
+fn def_translate_to() -> String {
+    "en".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +91,17 @@ pub struct Config {
     /// none | round
     #[serde(default = "def_widget_corner_style")]
     pub widget_corner_style: String,
+
+    // ── Real-time translation ────────────────────────────────────────────
+    /// Translate transcribed text before injection.
+    #[serde(default)]
+    pub translate_enabled: bool,
+    /// Source language code ("auto" = let Whisper detect) — e.g. "ru", "en".
+    #[serde(default = "def_translate_from")]
+    pub translate_from: String,
+    /// Target language code — e.g. "en", "ru", "de".
+    #[serde(default = "def_translate_to")]
+    pub translate_to: String,
 }
 
 impl Default for Config {
@@ -113,6 +130,9 @@ impl Default for Config {
             widget_animation: "flow".into(),
             widget_wave_form: "rolling".into(),
             widget_corner_style: "none".into(),
+            translate_enabled: false,
+            translate_from: "auto".into(),
+            translate_to: "en".into(),
         }
     }
 }

@@ -669,6 +669,24 @@
   color: #8a9ab0;
   letter-spacing: 0.01em;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.translate-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7ab4ff;
+  background: rgba(91, 142, 255, 0.12);
+  border: 1px solid rgba(91, 142, 255, 0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.5;
+  flex-shrink: 0;
 }
 
 /* ── Sound wave bars (recording) ── */

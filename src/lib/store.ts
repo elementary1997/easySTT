@@ -30,6 +30,12 @@ export interface AppConfig {
   widgetWaveForm: "rolling" | "smooth" | "line";
   /** Скругление угла виджета */
   widgetCornerStyle: "none" | "round";
+  /** Перевод в реальном времени */
+  translateEnabled: boolean;
+  /** Исходный язык: "auto" или код языка (ru, en, de, …) */
+  translateFrom: string;
+  /** Целевой язык: код (en, ru, de, …) */
+  translateTo: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -56,6 +62,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   widgetAnimation: "flow",
   widgetWaveForm: "rolling",
   widgetCornerStyle: "none",
+  translateEnabled: false,
+  translateFrom: "auto",
+  translateTo: "en",
 };
 
 let _store: Store | null = null;

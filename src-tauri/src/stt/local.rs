@@ -87,6 +87,9 @@ fn whisper_init_parameters(use_gpu: bool) -> WhisperContextParameters<'static> {
 }
 
 /// Run recognition reusing a loaded [WhisperContext] when the model path matches.
+///
+/// `translate`: when `true`, activates Whisper's built-in translate task which
+/// outputs English text regardless of the input language — free, no extra API call.
 pub async fn transcribe_cached(
     cache: Arc<Mutex<Option<LocalWhisperCache>>>,
     model_path: String,
@@ -95,6 +98,7 @@ pub async fn transcribe_cached(
     language: &str,
     cancel: Arc<AtomicBool>,
     use_gpu: bool,
+    translate: bool,
 ) -> anyhow::Result<String> {
     let resampled = resample_to_16k(&samples, sample_rate);
     // GPU-режим: не обрезаем тишину — Vulkan-бэкенд требует минимум ~1 сек аудио
@@ -146,6 +150,9 @@ pub async fn transcribe_cached(
         // CPU-режим: оптимальное число потоков из n_threads().
         params.set_n_threads(if use_gpu { 1 } else { n_threads() });
         params.set_language(lang.as_deref());
+        // translate=true → Whisper's built-in translate task: any language → English.
+        // translate=false (default) → transcribe in the source/detected language.
+        params.set_translate(translate);
         // Faster one-shot dictation profile
         params.set_no_context(true);
         params.set_single_segment(true);

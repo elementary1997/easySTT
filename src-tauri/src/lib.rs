@@ -12,6 +12,7 @@ use stt::cloudru::{bearer_for_stt, fetch_model_ids, CloudRuStt, normalize_fm_bas
 use stt::local::{transcribe_cached, LocalWhisperCache};
 use stt::model_catalog::{model_catalog, ModelInfo};
 use stt::openrouter::OpenRouterStt;
+use stt::translate::translate_via_llm;
 use stt::SttBackend as Trait;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -365,7 +366,13 @@ async fn transcribe_with_config(
     let lang = config.language.as_str();
     let effective_lang = if lang == "auto" { "" } else { lang };
 
-    match config.stt_backend {
+    // Whisper's built-in translate task: local only, target must be English.
+    // Free, no extra API call, one inference pass.
+    let use_whisper_translate = config.translate_enabled
+        && config.stt_backend == SttBackend::Local
+        && config.translate_to == "en";
+
+    let raw_text = match config.stt_backend {
         SttBackend::Local => {
             transcribe_cached(
                 local_cache,
@@ -375,8 +382,9 @@ async fn transcribe_with_config(
                 effective_lang,
                 cancel,
                 config.local_use_gpu,
+                use_whisper_translate,
             )
-            .await
+            .await?
         }
         SttBackend::Cloudru => {
             let st = CloudRuStt {
@@ -386,9 +394,9 @@ async fn transcribe_with_config(
                 model: config.cloudru_model.clone(),
             };
             tokio::select! {
-                r = st.transcribe(samples, sample_rate, effective_lang) => r,
+                r = st.transcribe(samples, sample_rate, effective_lang) => r?,
                 _ = until_user_cancel(cancel.clone()) => {
-                    Err(anyhow::anyhow!("Обработка отменена"))
+                    return Err(anyhow::anyhow!("Обработка отменена"));
                 }
             }
         }
@@ -398,13 +406,33 @@ async fn transcribe_with_config(
                 model: config.openrouter_model.clone(),
             };
             tokio::select! {
-                r = st.transcribe(samples, sample_rate, effective_lang) => r,
+                r = st.transcribe(samples, sample_rate, effective_lang) => r?,
                 _ = until_user_cancel(cancel.clone()) => {
-                    Err(anyhow::anyhow!("Обработка отменена"))
+                    return Err(anyhow::anyhow!("Обработка отменена"));
                 }
             }
         }
+    };
+
+    // Post-transcription LLM translation (when Whisper native translate isn't used).
+    if config.translate_enabled && !use_whisper_translate {
+        if config.openrouter_api_key.trim().is_empty() {
+            return Err(anyhow::anyhow!(
+                "Для перевода на «{}» нужен API-ключ OpenRouter. \
+                 Бесплатный вариант (→ English) доступен только с локальным Whisper.",
+                config.translate_to
+            ));
+        }
+        return translate_via_llm(
+            &raw_text,
+            &config.translate_from,
+            &config.translate_to,
+            &config.openrouter_api_key,
+        )
+        .await;
     }
+
+    Ok(raw_text)
 }
 
 fn path_str(config: &Config) -> String {
