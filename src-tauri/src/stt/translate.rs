@@ -95,12 +95,13 @@ pub async fn translate_via_endpoint(
         .to_string())
 }
 
-/// Translate `text` from `from_lang` to `to_lang` using **OpenRouter** (`openai/gpt-4o-mini`).
+/// Translate `text` from `from_lang` to `to_lang` using **OpenRouter**.
 pub async fn translate_via_openrouter(
     text: &str,
     from_lang: &str,
     to_lang: &str,
     api_key: &str,
+    model: &str,
 ) -> anyhow::Result<String> {
     translate_via_endpoint(
         text,
@@ -108,7 +109,7 @@ pub async fn translate_via_openrouter(
         to_lang,
         "https://openrouter.ai/api/v1/chat/completions",
         api_key,
-        "openai/gpt-4o-mini",
+        model,
     )
     .await
 }
@@ -116,26 +117,19 @@ pub async fn translate_via_openrouter(
 /// Translate `text` from `from_lang` to `to_lang` using **Cloud.ru** Foundation Models.
 ///
 /// Requires an already-resolved Bearer token (call `bearer_for_stt` first).
-/// Uses `Qwen/Qwen2.5-72B-Instruct` — solid multilingual translation quality.
 pub async fn translate_via_cloudru(
     text: &str,
     from_lang: &str,
     to_lang: &str,
     bearer_token: &str,
     base_url: &str,
+    model: &str,
 ) -> anyhow::Result<String> {
     let url = format!(
         "{}/chat/completions",
         base_url.trim().trim_end_matches('/')
     );
-    translate_via_endpoint(
-        text,
-        from_lang,
-        to_lang,
-        &url,
-        bearer_token,
-        "Qwen/Qwen2.5-72B-Instruct",
-    )
-    .await
+    translate_via_endpoint(text, from_lang, to_lang, &url, bearer_token, model)
+        .await
 }
 

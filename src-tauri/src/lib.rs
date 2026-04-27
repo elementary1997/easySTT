@@ -463,7 +463,7 @@ async fn transcribe_with_config(
     if translate_en_to_ru {
         match config.stt_backend {
             SttBackend::Openrouter => {
-                return translate_via_openrouter(&raw_text, "en", "ru", &config.openrouter_api_key).await;
+                return translate_via_openrouter(&raw_text, "en", "ru", &config.openrouter_api_key, &config.translate_model_openrouter).await;
             }
             SttBackend::Cloudru => {
                 let bearer = bearer_for_stt(&config.cloudru_key_id, &config.cloudru_api_key)
@@ -474,7 +474,7 @@ async fn transcribe_with_config(
                 } else {
                     normalize_fm_base_url(&config.cloudru_base_url)
                 };
-                return translate_via_cloudru(&raw_text, "en", "ru", &bearer, &base_url).await;
+                return translate_via_cloudru(&raw_text, "en", "ru", &bearer, &base_url, &config.translate_model_cloudru).await;
             }
             SttBackend::Local => {
                 return Err(anyhow::anyhow!(

@@ -34,6 +34,10 @@ export interface AppConfig {
   translateEnabled: boolean;
   /** Направление перевода: "ru_to_en" | "en_to_ru" */
   translateDirection: "ru_to_en" | "en_to_ru";
+  /** Модель для перевода на Cloud.ru */
+  translateModelCloudru: string;
+  /** Модель для перевода на OpenRouter */
+  translateModelOpenrouter: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -62,6 +66,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   widgetCornerStyle: "none",
   translateEnabled: false,
   translateDirection: "ru_to_en",
+  translateModelCloudru: "Qwen/Qwen2.5-72B-Instruct",
+  translateModelOpenrouter: "openai/gpt-4o-mini",
 };
 
 let _store: Store | null = null;

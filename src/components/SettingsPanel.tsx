@@ -731,18 +731,42 @@ export default function SettingsPanel() {
                     onChange={(e) => update("translateDirection", e.target.value as "ru_to_en" | "en_to_ru")}
                   >
                     <option value="ru_to_en">Русский → English</option>
-                    <option value="en_to_ru">English → Русский</option>
+                    {config.sttBackend !== "local" && (
+                      <option value="en_to_ru">English → Русский</option>
+                    )}
                   </select>
                 </label>
 
+                {config.sttBackend === "cloudru" && (
+                  <label className="field">
+                    <span className="field-label">Модель перевода (Cloud.ru)</span>
+                    <input
+                      type="text"
+                      value={config.translateModelCloudru}
+                      onChange={(e) => update("translateModelCloudru", e.target.value)}
+                      placeholder="Qwen/Qwen2.5-72B-Instruct"
+                    />
+                  </label>
+                )}
+
+                {config.sttBackend === "openrouter" && (
+                  <label className="field">
+                    <span className="field-label">Модель перевода (OpenRouter)</span>
+                    <input
+                      type="text"
+                      value={config.translateModelOpenrouter}
+                      onChange={(e) => update("translateModelOpenrouter", e.target.value)}
+                      placeholder="openai/gpt-4o-mini"
+                    />
+                  </label>
+                )}
+
                 <p className="hint">
-                  {config.sttBackend === "local" && config.translateDirection === "ru_to_en"
+                  {config.sttBackend === "local"
                     ? "✓ Встроенный перевод Whisper → English (бесплатно, без API-ключа)."
-                    : config.sttBackend === "local" && config.translateDirection === "en_to_ru"
-                      ? "⚠ Локальный Whisper не может переводить → Русский. Переключитесь на Cloud.ru или OpenRouter."
-                      : config.sttBackend === "cloudru"
-                        ? "✓ Транскрипция и перевод через Cloud.ru (Qwen2.5-72B)."
-                        : "✓ Транскрипция и перевод через OpenRouter (GPT-4o mini)."}
+                    : config.sttBackend === "cloudru"
+                      ? `✓ STT: Whisper. Перевод EN↔RU: ${config.translateModelCloudru || "Qwen/Qwen2.5-72B-Instruct"} (Cloud.ru).`
+                      : `✓ STT: Whisper. Перевод EN↔RU: ${config.translateModelOpenrouter || "openai/gpt-4o-mini"} (OpenRouter).`}
                 </p>
               </>
             )}

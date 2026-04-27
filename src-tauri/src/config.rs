@@ -46,6 +46,12 @@ fn def_widget_corner_style() -> String {
 fn def_translate_direction() -> String {
     "ru_to_en".to_string()
 }
+fn def_translate_model_cloudru() -> String {
+    "Qwen/Qwen2.5-72B-Instruct".to_string()
+}
+fn def_translate_model_openrouter() -> String {
+    "openai/gpt-4o-mini".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +102,12 @@ pub struct Config {
     /// Translation direction: "ru_to_en" | "en_to_ru".
     #[serde(default = "def_translate_direction")]
     pub translate_direction: String,
+    /// LLM model used for translation on Cloud.ru (chat completions).
+    #[serde(default = "def_translate_model_cloudru")]
+    pub translate_model_cloudru: String,
+    /// LLM model used for translation on OpenRouter (chat completions).
+    #[serde(default = "def_translate_model_openrouter")]
+    pub translate_model_openrouter: String,
 }
 
 impl Default for Config {
@@ -126,6 +138,8 @@ impl Default for Config {
             widget_corner_style: "none".into(),
             translate_enabled: false,
             translate_direction: "ru_to_en".into(),
+            translate_model_cloudru: "Qwen/Qwen2.5-72B-Instruct".into(),
+            translate_model_openrouter: "openai/gpt-4o-mini".into(),
         }
     }
 }
