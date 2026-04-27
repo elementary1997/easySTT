@@ -30,7 +30,12 @@ impl SttBackend for OpenRouterStt {
 }
 
 impl OpenRouterStt {
-    async fn transcribe_multipart(&self, wav: Vec<u8>, language: &str) -> anyhow::Result<String> {
+    async fn post_audio_endpoint(
+        &self,
+        endpoint: &str, // "transcriptions" | "translations"
+        wav: Vec<u8>,
+        language: &str, // ignored for translations
+    ) -> anyhow::Result<String> {
         let file_part = multipart::Part::bytes(wav)
             .file_name("audio.wav")
             .mime_str("audio/wav")?;
@@ -39,7 +44,7 @@ impl OpenRouterStt {
             .text("model", self.model.clone())
             .part("file", file_part);
 
-        if !language.is_empty() && language != "auto" {
+        if endpoint == "transcriptions" && !language.is_empty() && language != "auto" {
             form = form.text("language", language.to_owned());
         }
 
@@ -47,8 +52,9 @@ impl OpenRouterStt {
             .timeout(std::time::Duration::from_secs(60))
             .build()?;
 
+        let url = format!("https://openrouter.ai/api/v1/audio/{endpoint}");
         let response = client
-            .post("https://openrouter.ai/api/v1/audio/transcriptions")
+            .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("HTTP-Referer", "https://github.com/easystt/easystt")
             .multipart(form)
@@ -63,6 +69,18 @@ impl OpenRouterStt {
 
         let json: serde_json::Value = response.json().await?;
         Ok(json["text"].as_str().unwrap_or("").trim().to_string())
+    }
+
+    async fn transcribe_multipart(&self, wav: Vec<u8>, language: &str) -> anyhow::Result<String> {
+        self.post_audio_endpoint("transcriptions", wav, language).await
+    }
+
+    /// Use Whisper's built-in translate task via `/audio/translations` (audio → English text).
+    pub async fn translate_audio(&self, samples: &[f32], sample_rate: u32) -> anyhow::Result<String> {
+        use crate::audio::{pcm_to_wav, resample_to_16k};
+        let resampled = resample_to_16k(samples, sample_rate);
+        let wav = pcm_to_wav(&resampled, 16000);
+        self.post_audio_endpoint("translations", wav, "").await
     }
 
     async fn transcribe_chat(&self, wav: Vec<u8>, language: &str) -> anyhow::Result<String> {

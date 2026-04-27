@@ -93,6 +93,40 @@ fn build_transcribe_form(
     Ok(form)
 }
 
+/// POST to `/audio/transcriptions` or `/audio/translations` depending on `endpoint`.
+async fn post_audio_endpoint(
+    endpoint: &str, // "transcriptions" | "translations"
+    model_id: &str,
+    client: &Client,
+    base: &str,
+    wav: Vec<u8>,
+    language: &str, // ignored for translations (Whisper auto-detects)
+    has_key_id: bool,
+    auth_bearer: &str,
+    raw_secret: &str,
+) -> Result<reqwest::Response, anyhow::Error> {
+    let url = format!("{base}/audio/{endpoint}");
+    let wav_retry = wav.clone();
+    let form = build_transcribe_form(model_id, wav, if endpoint == "translations" { "" } else { language })?;
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {auth_bearer}"))
+        .multipart(form)
+        .send()
+        .await?;
+
+    if response.status() == StatusCode::UNAUTHORIZED && !has_key_id && !raw_secret.is_empty() {
+        let form2 = build_transcribe_form(model_id, wav_retry, if endpoint == "translations" { "" } else { language })?;
+        return Ok(client
+            .post(&url)
+            .header("Authorization", format!("Api-Key {raw_secret}"))
+            .multipart(form2)
+            .send()
+            .await?);
+    }
+    Ok(response)
+}
+
 /// POST: сначала `Authorization: Bearer …`; если 401 и это не IAM-flow — второй с `Api-Key` (тот же секрет).
 pub async fn post_audio_transcribe(
     model_id: &str,
@@ -127,31 +161,18 @@ async fn post_audio_transcribe_impl(
     auth_bearer: &str,
     raw_secret: &str,
 ) -> Result<reqwest::Response, anyhow::Error> {
-    let url = format!("{base}/audio/transcriptions");
-    let _wav_retry = wav.clone();
-    let form = build_transcribe_form(model_id, wav, language)?;
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {auth_bearer}"))
-        .multipart(form)
-        .send()
-        .await?;
-
-    if response.status() == StatusCode::UNAUTHORIZED
-        && !has_key_id
-        && !raw_secret.is_empty()
-    {
-        // Док-стиль Cloud «Api-Key <ключ>» для API-ключей (Evolution) без пары keyId+secret
-        let form2 = build_transcribe_form(model_id, _wav_retry, language)?;
-        return Ok(client
-            .post(&url)
-            .header("Authorization", format!("Api-Key {raw_secret}"))
-            .multipart(form2)
-            .send()
-            .await?);
-    }
-
-    Ok(response)
+    post_audio_endpoint(
+        "transcriptions",
+        model_id,
+        client,
+        base,
+        wav,
+        language,
+        has_key_id,
+        auth_bearer,
+        raw_secret,
+    )
+    .await
 }
 
 /// Сводка: только STT/аудио, весь `data` для подсказок.
@@ -281,5 +302,46 @@ impl SttBackend for CloudRuStt {
             .unwrap_or("")
             .trim()
             .to_string())
+    }
+}
+
+impl CloudRuStt {
+    /// Use Whisper's built-in translate task via `/audio/translations` (audio → English text).
+    pub async fn translate_audio(&self, samples: &[f32], sample_rate: u32) -> anyhow::Result<String> {
+        let resampled = resample_to_16k(samples, sample_rate);
+        let wav = pcm_to_wav(&resampled, 16000);
+        let has_key_id = !self.key_id.trim().is_empty();
+        let bearer = bearer_for_stt(&self.key_id, &self.api_key)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let raw = self.api_key.trim().to_string();
+        let base = normalize_fm_base_url(&self.base_url);
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
+        let model_id = self.model.trim();
+        let model_id = if model_id.is_empty() { DEFAULT_CLOUDRU_MODEL } else { model_id };
+
+        let response = post_audio_endpoint(
+            "translations",
+            model_id,
+            &client,
+            &base,
+            wav,
+            "",
+            has_key_id,
+            &bearer,
+            &raw,
+        )
+        .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Cloud.ru translate {status}: {body}"));
+        }
+
+        let json: Value = response.json().await?;
+        Ok(json["text"].as_str().unwrap_or("").trim().to_string())
     }
 }

@@ -366,12 +366,57 @@ async fn transcribe_with_config(
     let lang = config.language.as_str();
     let effective_lang = if lang == "auto" { "" } else { lang };
 
-    // Whisper's built-in translate task: local only, direction must be ru→en.
-    // Free, no extra API call, one inference pass.
-    let use_whisper_translate = config.translate_enabled
-        && config.stt_backend == SttBackend::Local
-        && config.translate_direction == "ru_to_en";
+    let translate_ru_to_en = config.translate_enabled && config.translate_direction == "ru_to_en";
+    let translate_en_to_ru = config.translate_enabled && config.translate_direction == "en_to_ru";
 
+    // ── RU → EN: audio-level Whisper translate task (no LLM needed) ──────────
+    // All three backends use Whisper, so we call their translate_audio path.
+    // Local: set_translate(true) in whisper-rs; Cloud.ru/OpenRouter: /audio/translations.
+    if translate_ru_to_en {
+        return match config.stt_backend {
+            SttBackend::Local => {
+                transcribe_cached(
+                    local_cache,
+                    path_str(config),
+                    samples.to_vec(),
+                    sample_rate,
+                    effective_lang,
+                    cancel,
+                    config.local_use_gpu,
+                    true, // translate = true
+                )
+                .await
+            }
+            SttBackend::Cloudru => {
+                let st = CloudRuStt {
+                    api_key: config.cloudru_api_key.clone(),
+                    key_id: config.cloudru_key_id.clone(),
+                    base_url: config.cloudru_base_url.clone(),
+                    model: config.cloudru_model.clone(),
+                };
+                tokio::select! {
+                    r = st.translate_audio(samples, sample_rate) => r,
+                    _ = until_user_cancel(cancel.clone()) => {
+                        Err(anyhow::anyhow!("Обработка отменена"))
+                    }
+                }
+            }
+            SttBackend::Openrouter => {
+                let st = OpenRouterStt {
+                    api_key: config.openrouter_api_key.clone(),
+                    model: config.openrouter_model.clone(),
+                };
+                tokio::select! {
+                    r = st.translate_audio(samples, sample_rate) => r,
+                    _ = until_user_cancel(cancel.clone()) => {
+                        Err(anyhow::anyhow!("Обработка отменена"))
+                    }
+                }
+            }
+        };
+    }
+
+    // ── Normal transcription (no translation, or EN → RU which needs text LLM) ─
     let raw_text = match config.stt_backend {
         SttBackend::Local => {
             transcribe_cached(
@@ -382,7 +427,7 @@ async fn transcribe_with_config(
                 effective_lang,
                 cancel,
                 config.local_use_gpu,
-                use_whisper_translate,
+                false,
             )
             .await?
         }
@@ -414,25 +459,11 @@ async fn transcribe_with_config(
         }
     };
 
-    // Post-transcription LLM translation (when Whisper native translate isn't used).
-    // Translation backend matches the STT backend — no cross-service mixing.
-    // "ru_to_en" → from="ru", to="en"; "en_to_ru" → from="en", to="ru".
-    if config.translate_enabled && !use_whisper_translate {
-        let (from_lang, to_lang) = if config.translate_direction == "en_to_ru" {
-            ("en", "ru")
-        } else {
-            ("ru", "en")
-        };
-
+    // ── EN → RU: text-level LLM translation (Whisper can't do this at audio level) ─
+    if translate_en_to_ru {
         match config.stt_backend {
             SttBackend::Openrouter => {
-                return translate_via_openrouter(
-                    &raw_text,
-                    from_lang,
-                    to_lang,
-                    &config.openrouter_api_key,
-                )
-                .await;
+                return translate_via_openrouter(&raw_text, "en", "ru", &config.openrouter_api_key).await;
             }
             SttBackend::Cloudru => {
                 let bearer = bearer_for_stt(&config.cloudru_key_id, &config.cloudru_api_key)
@@ -443,18 +474,9 @@ async fn transcribe_with_config(
                 } else {
                     normalize_fm_base_url(&config.cloudru_base_url)
                 };
-                return translate_via_cloudru(
-                    &raw_text,
-                    from_lang,
-                    to_lang,
-                    &bearer,
-                    &base_url,
-                )
-                .await;
+                return translate_via_cloudru(&raw_text, "en", "ru", &bearer, &base_url).await;
             }
             SttBackend::Local => {
-                // Whisper native RU→EN was already handled above (use_whisper_translate).
-                // EN→RU with local model is not supported.
                 return Err(anyhow::anyhow!(
                     "Локальный Whisper поддерживает только перевод RU → EN (бесплатно). \
                      Для EN → RU переключитесь на Cloud.ru или OpenRouter."
