@@ -12,7 +12,7 @@ use stt::cloudru::{bearer_for_stt, fetch_model_ids, CloudRuStt, normalize_fm_bas
 use stt::local::{transcribe_cached, LocalWhisperCache};
 use stt::model_catalog::{model_catalog, ModelInfo};
 use stt::openrouter::OpenRouterStt;
-use stt::translate::translate_via_llm;
+use stt::translate::{translate_via_cloudru, translate_via_openrouter};
 use stt::SttBackend as Trait;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -415,21 +415,41 @@ async fn transcribe_with_config(
     };
 
     // Post-transcription LLM translation (when Whisper native translate isn't used).
+    // Priority: OpenRouter → Cloud.ru → error.
     if config.translate_enabled && !use_whisper_translate {
-        if config.openrouter_api_key.trim().is_empty() {
-            return Err(anyhow::anyhow!(
-                "Для перевода на «{}» нужен API-ключ OpenRouter. \
-                 Бесплатный вариант (→ English) доступен только с локальным Whisper.",
-                config.translate_to
-            ));
+        if !config.openrouter_api_key.trim().is_empty() {
+            return translate_via_openrouter(
+                &raw_text,
+                &config.translate_from,
+                &config.translate_to,
+                &config.openrouter_api_key,
+            )
+            .await;
         }
-        return translate_via_llm(
-            &raw_text,
-            &config.translate_from,
-            &config.translate_to,
-            &config.openrouter_api_key,
-        )
-        .await;
+
+        if !config.cloudru_api_key.trim().is_empty() {
+            let bearer = bearer_for_stt(&config.cloudru_key_id, &config.cloudru_api_key)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let base_url = if config.cloudru_base_url.trim().is_empty() {
+                "https://foundation-models.api.cloud.ru/v1".to_string()
+            } else {
+                normalize_fm_base_url(&config.cloudru_base_url)
+            };
+            return translate_via_cloudru(
+                &raw_text,
+                &config.translate_from,
+                &config.translate_to,
+                &bearer,
+                &base_url,
+            )
+            .await;
+        }
+
+        return Err(anyhow::anyhow!(
+            "Для перевода нужен API-ключ OpenRouter или Cloud.ru. \
+             Бесплатный вариант (→ English) доступен только с локальным Whisper."
+        ));
     }
 
     Ok(raw_text)

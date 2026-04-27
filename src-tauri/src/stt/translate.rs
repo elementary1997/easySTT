@@ -1,6 +1,11 @@
-/// Real-time translation via OpenRouter chat completions.
+/// Real-time translation via any OpenAI-compatible chat completions endpoint.
 ///
-/// Uses `openai/gpt-4o-mini` — fast, cheap, excellent translation quality.
+/// Two built-in routes:
+///  1. OpenRouter (`openai/gpt-4o-mini`) — when `openrouter_api_key` is set.
+///  2. Cloud.ru Foundation Models — when `cloudru_*` credentials are set.
+///     Cloud.ru exposes the same `/v1/chat/completions` endpoint, so we reuse
+///     the same function with a different URL / Bearer token.
+///
 /// Called AFTER transcription when `Config::translate_enabled == true` and
 /// the translation cannot be handled natively by Whisper (i.e. target ≠ English
 /// or backend ≠ local).
@@ -24,24 +29,18 @@ pub fn lang_name(code: &str) -> &'static str {
         "pl" => "Polish",
         "tr" => "Turkish",
         "uk" => "Ukrainian",
-        other => {
-            // Return a static reference to a known string or fall back to "the target language"
-            // For unknown codes, we can't return a reference to the input `other` directly
-            // (lifetime issue), so fall back gracefully.
-            let _ = other;
-            "the target language"
-        }
+        _ => "the target language",
     }
 }
 
-/// Translate `text` from `from_lang` to `to_lang` using OpenRouter chat API.
-///
-/// `from_lang` may be `"auto"` — in that case the model infers the source language.
-pub async fn translate_via_llm(
+/// Low-level translation call against any OpenAI-compatible `/v1/chat/completions` endpoint.
+pub async fn translate_via_endpoint(
     text: &str,
     from_lang: &str,
     to_lang: &str,
-    openrouter_key: &str,
+    api_url: &str,
+    api_key: &str,
+    model: &str,
 ) -> anyhow::Result<String> {
     if text.trim().is_empty() {
         return Ok(String::new());
@@ -61,7 +60,7 @@ pub async fn translate_via_llm(
     );
 
     let body = json!({
-        "model": "openai/gpt-4o-mini",
+        "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user",   "content": text}
@@ -75,8 +74,8 @@ pub async fn translate_via_llm(
         .build()?;
 
     let response = client
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {openrouter_key}"))
+        .post(api_url)
+        .header("Authorization", format!("Bearer {api_key}"))
         .header("HTTP-Referer", "https://github.com/easystt/easystt")
         .json(&body)
         .send()
@@ -95,3 +94,48 @@ pub async fn translate_via_llm(
         .trim()
         .to_string())
 }
+
+/// Translate `text` from `from_lang` to `to_lang` using **OpenRouter** (`openai/gpt-4o-mini`).
+pub async fn translate_via_openrouter(
+    text: &str,
+    from_lang: &str,
+    to_lang: &str,
+    api_key: &str,
+) -> anyhow::Result<String> {
+    translate_via_endpoint(
+        text,
+        from_lang,
+        to_lang,
+        "https://openrouter.ai/api/v1/chat/completions",
+        api_key,
+        "openai/gpt-4o-mini",
+    )
+    .await
+}
+
+/// Translate `text` from `from_lang` to `to_lang` using **Cloud.ru** Foundation Models.
+///
+/// Requires an already-resolved Bearer token (call `bearer_for_stt` first).
+/// Uses `Qwen/Qwen2.5-72B-Instruct` — solid multilingual translation quality.
+pub async fn translate_via_cloudru(
+    text: &str,
+    from_lang: &str,
+    to_lang: &str,
+    bearer_token: &str,
+    base_url: &str,
+) -> anyhow::Result<String> {
+    let url = format!(
+        "{}/chat/completions",
+        base_url.trim().trim_end_matches('/')
+    );
+    translate_via_endpoint(
+        text,
+        from_lang,
+        to_lang,
+        &url,
+        bearer_token,
+        "Qwen/Qwen2.5-72B-Instruct",
+    )
+    .await
+}
+
