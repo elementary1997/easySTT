@@ -366,11 +366,11 @@ async fn transcribe_with_config(
     let lang = config.language.as_str();
     let effective_lang = if lang == "auto" { "" } else { lang };
 
-    // Whisper's built-in translate task: local only, target must be English.
+    // Whisper's built-in translate task: local only, direction must be ru→en.
     // Free, no extra API call, one inference pass.
     let use_whisper_translate = config.translate_enabled
         && config.stt_backend == SttBackend::Local
-        && config.translate_to == "en";
+        && config.translate_direction == "ru_to_en";
 
     let raw_text = match config.stt_backend {
         SttBackend::Local => {
@@ -416,14 +416,20 @@ async fn transcribe_with_config(
 
     // Post-transcription LLM translation (when Whisper native translate isn't used).
     // Translation backend matches the STT backend — no cross-service mixing.
-    // Local model without a cloud key can only translate → English via Whisper natively.
+    // "ru_to_en" → from="ru", to="en"; "en_to_ru" → from="en", to="ru".
     if config.translate_enabled && !use_whisper_translate {
+        let (from_lang, to_lang) = if config.translate_direction == "en_to_ru" {
+            ("en", "ru")
+        } else {
+            ("ru", "en")
+        };
+
         match config.stt_backend {
             SttBackend::Openrouter => {
                 return translate_via_openrouter(
                     &raw_text,
-                    &config.translate_from,
-                    &config.translate_to,
+                    from_lang,
+                    to_lang,
                     &config.openrouter_api_key,
                 )
                 .await;
@@ -439,20 +445,19 @@ async fn transcribe_with_config(
                 };
                 return translate_via_cloudru(
                     &raw_text,
-                    &config.translate_from,
-                    &config.translate_to,
+                    from_lang,
+                    to_lang,
                     &bearer,
                     &base_url,
                 )
                 .await;
             }
             SttBackend::Local => {
-                // Whisper native → English was already handled above (use_whisper_translate).
-                // For other target languages with local model, no matching LLM is available.
+                // Whisper native RU→EN was already handled above (use_whisper_translate).
+                // EN→RU with local model is not supported.
                 return Err(anyhow::anyhow!(
-                    "Локальный Whisper умеет переводить только → English (бесплатно). \
-                     Для перевода на «{}» переключитесь на OpenRouter или Cloud.ru.",
-                    config.translate_to
+                    "Локальный Whisper поддерживает только перевод RU → EN (бесплатно). \
+                     Для EN → RU переключитесь на Cloud.ru или OpenRouter."
                 ));
             }
         }

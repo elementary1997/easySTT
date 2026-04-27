@@ -277,9 +277,7 @@ export default function FloatingWidget() {
                 Удерживай для&nbsp;записи
                 {widgetConfig.translateEnabled && (
                   <span className="translate-badge">
-                    {widgetConfig.translateFrom === "auto" ? "auto" : widgetConfig.translateFrom}
-                    {" → "}
-                    {widgetConfig.translateTo}
+                    {widgetConfig.translateDirection === "en_to_ru" ? "EN → RU" : "RU → EN"}
                   </span>
                 )}
               </span>

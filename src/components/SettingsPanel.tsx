@@ -7,24 +7,6 @@ import "./SettingsPanel.css";
 
 type Tab = "general" | "look" | "backend" | "hotkey";
 
-const TRANSLATE_LANGS: [string, string][] = [
-  ["en", "English"],
-  ["ru", "Русский"],
-  ["de", "Deutsch"],
-  ["fr", "Français"],
-  ["es", "Español"],
-  ["zh", "中文"],
-  ["ja", "日本語"],
-  ["ko", "한국어"],
-  ["ar", "العربية"],
-  ["it", "Italiano"],
-  ["pt", "Português"],
-  ["nl", "Nederlands"],
-  ["pl", "Polski"],
-  ["tr", "Türkçe"],
-  ["uk", "Українська"],
-];
-
 
 type ModelInfo = {
   id: string;
@@ -733,32 +715,25 @@ export default function SettingsPanel() {
 
             {config.translateEnabled && (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <label className="field">
-                    <span className="field-label">Язык речи (откуда)</span>
-                    <select value={config.translateFrom} onChange={(e) => update("translateFrom", e.target.value)}>
-                      <option value="auto">Авто (определить)</option>
-                      {TRANSLATE_LANGS.map(([code, name]) => (
-                        <option key={code} value={code}>{name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Язык текста (куда)</span>
-                    <select value={config.translateTo} onChange={(e) => update("translateTo", e.target.value)}>
-                      {TRANSLATE_LANGS.map(([code, name]) => (
-                        <option key={code} value={code}>{name}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                <label className="field">
+                  <span className="field-label">Направление перевода</span>
+                  <select
+                    value={config.translateDirection}
+                    onChange={(e) => update("translateDirection", e.target.value as "ru_to_en" | "en_to_ru")}
+                  >
+                    <option value="ru_to_en">Русский → English</option>
+                    <option value="en_to_ru">English → Русский</option>
+                  </select>
+                </label>
 
                 <p className="hint">
-                  {config.sttBackend === "local" && config.translateTo === "en"
+                  {config.sttBackend === "local" && config.translateDirection === "ru_to_en"
                     ? "✓ Встроенный перевод Whisper → English (бесплатно, без API-ключа)."
-                    : config.openrouterApiKey
-                      ? `✓ Перевод через OpenRouter GPT-4o mini (${config.translateFrom === "auto" ? "авто" : config.translateFrom} → ${config.translateTo}).`
-                      : "⚠ Для перевода на этот язык нужен API-ключ OpenRouter. Добавьте его выше в разделе «OpenRouter», затем сохраните."}
+                    : config.sttBackend === "local" && config.translateDirection === "en_to_ru"
+                      ? "⚠ Локальный Whisper не может переводить → Русский. Переключитесь на Cloud.ru или OpenRouter."
+                      : config.sttBackend === "cloudru"
+                        ? "✓ Транскрипция и перевод через Cloud.ru (Qwen2.5-72B)."
+                        : "✓ Транскрипция и перевод через OpenRouter (GPT-4o mini)."}
                 </p>
               </>
             )}
