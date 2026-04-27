@@ -303,6 +303,15 @@ export default function SettingsPanel() {
             </label>
 
             <label className="field">
+              <span className="field-label">Язык распознавания</span>
+              <select value={config.language} onChange={(e) => update("language", e.target.value as AppConfig["language"])}>
+                <option value="auto">Авто (определить)</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+
+            <label className="field">
               <span className="field-label">Способ вставки текста</span>
               <select value={config.injectionMethod} onChange={(e) => update("injectionMethod", e.target.value as AppConfig["injectionMethod"])}>
                 <option value="clipboard">Буфер обмена + Ctrl+V</option>
