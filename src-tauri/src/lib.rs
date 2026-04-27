@@ -415,41 +415,47 @@ async fn transcribe_with_config(
     };
 
     // Post-transcription LLM translation (when Whisper native translate isn't used).
-    // Priority: OpenRouter → Cloud.ru → error.
+    // Translation backend matches the STT backend — no cross-service mixing.
+    // Local model without a cloud key can only translate → English via Whisper natively.
     if config.translate_enabled && !use_whisper_translate {
-        if !config.openrouter_api_key.trim().is_empty() {
-            return translate_via_openrouter(
-                &raw_text,
-                &config.translate_from,
-                &config.translate_to,
-                &config.openrouter_api_key,
-            )
-            .await;
+        match config.stt_backend {
+            SttBackend::Openrouter => {
+                return translate_via_openrouter(
+                    &raw_text,
+                    &config.translate_from,
+                    &config.translate_to,
+                    &config.openrouter_api_key,
+                )
+                .await;
+            }
+            SttBackend::Cloudru => {
+                let bearer = bearer_for_stt(&config.cloudru_key_id, &config.cloudru_api_key)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let base_url = if config.cloudru_base_url.trim().is_empty() {
+                    "https://foundation-models.api.cloud.ru/v1".to_string()
+                } else {
+                    normalize_fm_base_url(&config.cloudru_base_url)
+                };
+                return translate_via_cloudru(
+                    &raw_text,
+                    &config.translate_from,
+                    &config.translate_to,
+                    &bearer,
+                    &base_url,
+                )
+                .await;
+            }
+            SttBackend::Local => {
+                // Whisper native → English was already handled above (use_whisper_translate).
+                // For other target languages with local model, no matching LLM is available.
+                return Err(anyhow::anyhow!(
+                    "Локальный Whisper умеет переводить только → English (бесплатно). \
+                     Для перевода на «{}» переключитесь на OpenRouter или Cloud.ru.",
+                    config.translate_to
+                ));
+            }
         }
-
-        if !config.cloudru_api_key.trim().is_empty() {
-            let bearer = bearer_for_stt(&config.cloudru_key_id, &config.cloudru_api_key)
-                .await
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let base_url = if config.cloudru_base_url.trim().is_empty() {
-                "https://foundation-models.api.cloud.ru/v1".to_string()
-            } else {
-                normalize_fm_base_url(&config.cloudru_base_url)
-            };
-            return translate_via_cloudru(
-                &raw_text,
-                &config.translate_from,
-                &config.translate_to,
-                &bearer,
-                &base_url,
-            )
-            .await;
-        }
-
-        return Err(anyhow::anyhow!(
-            "Для перевода нужен API-ключ OpenRouter или Cloud.ru. \
-             Бесплатный вариант (→ English) доступен только с локальным Whisper."
-        ));
     }
 
     Ok(raw_text)
