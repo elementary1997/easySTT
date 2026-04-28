@@ -26,6 +26,7 @@ use tauri::{
 };
 use serde_json::json;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 
 /// #1a1a2e — дефолтный фон виджета (см. tauri.conf.json backgroundColor).
@@ -61,6 +62,10 @@ pub struct AppState {
     /// True when the app was launched by the OS autostart mechanism (--autostart arg).
     /// In this mode the widget window stays hidden — only the tray icon is shown.
     pub is_autostart: bool,
+    /// Id текущей AI-цели, выставленный нажатием AI-хоткея (см. [`config::AiTarget`]).
+    /// Читается через `take()` в `stop_and_transcribe`: если `Some(id)` — текст уйдёт в URL,
+    /// иначе пойдёт обычная inject-вставка в активное окно.
+    pending_ai_target: Mutex<Option<String>>,
 }
 
 fn is_cancelled_msg(s: &str) -> bool {
@@ -277,7 +282,7 @@ async fn stop_and_transcribe(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (samples, sample_rate) = state.recorder.lock().unwrap().stop();
-    let config = state.config.lock().unwrap().clone();
+    let mut config = state.config.lock().unwrap().clone();
     if samples.is_empty() {
         return Err("Нет аудиоданных".into());
     }
@@ -296,6 +301,19 @@ async fn stop_and_transcribe(
     // Read the saved foreground HWND (captured at PTT press in start_recording).
     let target_hwnd: isize = *state.prev_foreground_hwnd.lock().unwrap();
 
+    // AI-режим: если последний нажатый shortcut был AI-хоткеем, нашли соответствующий target.
+    // Перевод в AI-режиме игнорируем: современные чаты сами понимают любой язык,
+    // и тратить токены/время на отдельный LLM-вызов нет смысла.
+    let ai_target: Option<config::AiTarget> = state
+        .pending_ai_target
+        .lock()
+        .unwrap()
+        .take()
+        .and_then(|id| config.ai_targets.iter().find(|t| t.id == id).cloned());
+    if ai_target.is_some() {
+        config.translate_enabled = false;
+    }
+
     tokio::spawn(async move {
         let result = transcribe_with_config(&samples, sample_rate, &config, local_cache, cancel.clone())
             .await;
@@ -309,33 +327,54 @@ async fn stop_and_transcribe(
 
         match &result {
             Ok(text) if !text.is_empty() => {
-                let delay = config.inject_delay_ms;
-                let method = config.injection_method.clone();
-
-                // Restore focus to the window that was active at PTT press.
-                // Windows: use SetForegroundWindow — no widget hide/show needed.
-                // Linux/macOS: skip (global hotkey doesn't steal focus, so the
-                //   target window should still be active in most cases).
-                #[cfg(windows)]
-                if target_hwnd != 0 {
-                    use windows::Win32::Foundation::HWND;
-                    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-                    unsafe { let _ = SetForegroundWindow(HWND(target_hwnd as *mut _)); }
-                    std::thread::sleep(std::time::Duration::from_millis(80));
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = target_hwnd; // suppress unused warning
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-
-                let inject_result = inject::inject_text(text, &method, delay);
-                match inject_result {
-                    Ok(_) => {
-                        let _ = app_clone.emit("transcription-done", text);
+                if let Some(t) = &ai_target {
+                    // AI-режим: открываем URL-шаблон таргета с подставленным текстом
+                    // через системный браузер (tauri-plugin-shell). Никакого inject — не нужно
+                    // ни возвращать фокус, ни эмулировать Ctrl+V.
+                    let q = urlencoding::encode(text);
+                    let url = if t.url_template.contains("{q}") {
+                        t.url_template.replace("{q}", &q)
+                    } else {
+                        format!("{}{}{}", t.url_template, if t.url_template.contains('?') { "&" } else { "?" }, format!("q={}", q))
+                    };
+                    #[allow(deprecated)]
+                    match app_clone.shell().open(&url, None) {
+                        Ok(_) => {
+                            let _ = app_clone.emit("transcription-done", text);
+                        }
+                        Err(e) => {
+                            let _ = app_clone.emit("transcription-error", format!("Не удалось открыть URL: {e}"));
+                        }
                     }
-                    Err(e) => {
-                        let _ = app_clone.emit("transcription-error", e.to_string());
+                } else {
+                    let delay = config.inject_delay_ms;
+                    let method = config.injection_method.clone();
+
+                    // Restore focus to the window that was active at PTT press.
+                    // Windows: use SetForegroundWindow — no widget hide/show needed.
+                    // Linux/macOS: skip (global hotkey doesn't steal focus, so the
+                    //   target window should still be active in most cases).
+                    #[cfg(windows)]
+                    if target_hwnd != 0 {
+                        use windows::Win32::Foundation::HWND;
+                        use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+                        unsafe { let _ = SetForegroundWindow(HWND(target_hwnd as *mut _)); }
+                        std::thread::sleep(std::time::Duration::from_millis(80));
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        let _ = target_hwnd; // suppress unused warning
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+
+                    let inject_result = inject::inject_text(text, &method, delay);
+                    match inject_result {
+                        Ok(_) => {
+                            let _ = app_clone.emit("transcription-done", text);
+                        }
+                        Err(e) => {
+                            let _ = app_clone.emit("transcription-error", e.to_string());
+                        }
                     }
                 }
             }
@@ -646,8 +685,8 @@ fn delete_model(name: String, state: State<'_, AppState>) -> Result<(), String> 
 #[tauri::command]
 fn apply_config(config: Config, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let prev = state.config.lock().unwrap().clone();
-    let old_hotkey = prev.hotkey.clone();
-    let new_hotkey = config.hotkey.clone();
+    let hotkeys_changed =
+        prev.hotkey != config.hotkey || prev.ai_targets != config.ai_targets;
     #[cfg(not(target_os = "linux"))]
     let new_bg = config.widget_bg_to.clone();
 
@@ -661,8 +700,9 @@ fn apply_config(config: Config, state: State<'_, AppState>, app: AppHandle) -> R
 
     *state.config.lock().unwrap() = config;
 
-    if old_hotkey != new_hotkey {
-        register_hotkey(&app, &new_hotkey);
+    if hotkeys_changed {
+        let new_config = state.config.lock().unwrap().clone();
+        register_all_hotkeys(&app, &new_config);
     }
     // Синхронизируем нативный фон окна виджета с выбранным цветом темы.
     // На Linux окно прозрачное — не трогаем фон, иначе перекроем прозрачность.
@@ -738,47 +778,75 @@ fn quit_app(app: AppHandle) {
 
 // ─── Hotkey Registration ─────────────────────────────────────────────────────
 
-fn register_hotkey(app: &AppHandle, hotkey: &str) {
+/// Показывает индикатор записи у нижнего края экрана (без кражи фокуса).
+fn show_recording_indicator(app: &AppHandle) {
+    if let Some(ind) = app.get_webview_window("indicator") {
+        if let Ok(Some(mon)) = ind.primary_monitor() {
+            let sf = mon.scale_factor();
+            let mpos = mon.position();
+            let margin = (16.0 * sf) as i32;
+            let win_h = (44.0 * sf) as i32;
+            let x = mpos.x + margin;
+            #[cfg(windows)]
+            let bottom = crate::win_widget::work_area_bottom_px();
+            #[cfg(not(windows))]
+            let bottom = mpos.y + mon.size().height as i32;
+            let y = bottom - win_h - margin;
+            let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+        let _ = ind.set_always_on_top(true);
+        let _ = ind.show();
+    }
+}
+
+/// Регистрирует основной PTT-хоткей и по одному shortcut на каждый включённый AI-target.
+/// AI-хоткей при нажатии ставит [`AppState::pending_ai_target`] = `Some(id)` ДО эмита `ptt-pressed`,
+/// чтобы фронтенд успел вызвать `start_recording`, а `stop_and_transcribe` корректно прочёл цель.
+fn register_all_hotkeys(app: &AppHandle, config: &Config) {
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
-    let shortcut: tauri_plugin_global_shortcut::Shortcut = match hotkey.parse() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Invalid hotkey '{hotkey}': {e}");
-            return;
-        }
-    };
 
+    // Основной PTT — текст уходит в активное окно через inject.
+    if let Err(e) = bind_one_hotkey(app, &config.hotkey, None) {
+        eprintln!("Invalid PTT hotkey '{}': {e}", config.hotkey);
+    }
+
+    // AI-хоткеи: за каждый отвечает свой target id.
+    for t in &config.ai_targets {
+        if !t.enabled || t.hotkey.trim().is_empty() {
+            continue;
+        }
+        if let Err(e) = bind_one_hotkey(app, &t.hotkey, Some(t.id.clone())) {
+            eprintln!("Invalid AI hotkey '{}' for {}: {e}", t.hotkey, t.id);
+        }
+    }
+}
+
+fn bind_one_hotkey(
+    app: &AppHandle,
+    combo: &str,
+    ai_target: Option<String>,
+) -> Result<(), String> {
+    let shortcut: tauri_plugin_global_shortcut::Shortcut =
+        combo.parse().map_err(|e| format!("{e}"))?;
     let app_clone = app.clone();
-    let _ = gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
-        match event.state() {
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |_app, _shortcut, event| match event.state() {
             ShortcutState::Pressed => {
-                // Показываем индикатор над панелью задач в левом нижнем углу (без кражи фокуса).
-                if let Some(ind) = app_clone.get_webview_window("indicator") {
-                    if let Ok(Some(mon)) = ind.primary_monitor() {
-                        let sf    = mon.scale_factor();
-                        let mpos  = mon.position();
-                        let margin = (16.0 * sf) as i32;
-                        let win_h  = (44.0 * sf) as i32;
-                        let x = mpos.x + margin;
-                        // On Windows use work area so the widget sits above the taskbar.
-                        #[cfg(windows)]
-                        let bottom = crate::win_widget::work_area_bottom_px();
-                        #[cfg(not(windows))]
-                        let bottom = mpos.y + mon.size().height as i32;
-                        let y = bottom - win_h - margin;
-                        let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
-                    }
-                    let _ = ind.set_always_on_top(true);
-                    let _ = ind.show();
+                // Записываем (или сбрасываем) AI-target ДО эмита события, чтобы
+                // последующий start_recording → stop_and_transcribe увидел корректное значение.
+                if let Some(st) = app_clone.try_state::<AppState>() {
+                    *st.pending_ai_target.lock().unwrap() = ai_target.clone();
                 }
+                show_recording_indicator(&app_clone);
                 let _ = app_clone.emit("ptt-pressed", ());
             }
             ShortcutState::Released => {
                 let _ = app_clone.emit("ptt-released", ());
             }
-        }
-    });
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ─── Tray Setup ──────────────────────────────────────────────────────────────
@@ -838,6 +906,7 @@ pub fn run() {
         download_cancel: Arc::new(AtomicBool::new(false)),
         prev_foreground_hwnd: Mutex::new(0),
         is_autostart: std::env::args().any(|a| a == "--autostart"),
+        pending_ai_target: Mutex::new(None),
     };
 
     tauri::Builder::default()
@@ -949,7 +1018,7 @@ pub fn run() {
             }
 
             let config = app.state::<AppState>().config.lock().unwrap().clone();
-            register_hotkey(&app_handle, &config.hotkey);
+            register_all_hotkeys(&app_handle, &config);
             if let Some(settings_win) = app.get_webview_window("settings") {
                 let win = settings_win.clone();
                 let ah = app_handle.clone();

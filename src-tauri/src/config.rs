@@ -53,6 +53,44 @@ fn def_translate_model_openrouter() -> String {
     "openai/gpt-4o-mini".to_string()
 }
 
+/// Перевод транскрипта в URL-открытие на стороннем AI-чате (Perplexity, ChatGPT, Claude…).
+/// `url_template` должен содержать плейсхолдер `{q}` — туда подставляется URL-кодированный текст.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTarget {
+    pub id: String,
+    pub name: String,
+    pub url_template: String,
+    pub hotkey: String,
+    pub enabled: bool,
+}
+
+fn def_ai_targets() -> Vec<AiTarget> {
+    vec![
+        AiTarget {
+            id: "perplexity".into(),
+            name: "Perplexity".into(),
+            url_template: "https://www.perplexity.ai/search?q={q}".into(),
+            hotkey: "Alt+Shift+1".into(),
+            enabled: true,
+        },
+        AiTarget {
+            id: "chatgpt".into(),
+            name: "ChatGPT".into(),
+            url_template: "https://chatgpt.com/?q={q}".into(),
+            hotkey: "Alt+Shift+2".into(),
+            enabled: true,
+        },
+        AiTarget {
+            id: "claude".into(),
+            name: "Claude".into(),
+            url_template: "https://claude.ai/new?q={q}".into(),
+            hotkey: "Alt+Shift+3".into(),
+            enabled: true,
+        },
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -108,6 +146,11 @@ pub struct Config {
     /// LLM model used for translation on OpenRouter (chat completions).
     #[serde(default = "def_translate_model_openrouter")]
     pub translate_model_openrouter: String,
+
+    /// Список целей AI-режима. Каждая регистрирует свой глобальный хоткей; при срабатывании
+    /// транскрипт уходит не в активное окно через inject, а открывается в браузере по URL-шаблону.
+    #[serde(default = "def_ai_targets")]
+    pub ai_targets: Vec<AiTarget>,
 }
 
 impl Default for Config {
@@ -140,6 +183,7 @@ impl Default for Config {
             translate_direction: "ru_to_en".into(),
             translate_model_cloudru: "Qwen/Qwen2.5-72B-Instruct".into(),
             translate_model_openrouter: "openai/gpt-4o-mini".into(),
+            ai_targets: def_ai_targets(),
         }
     }
 }

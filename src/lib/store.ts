@@ -1,5 +1,14 @@
 import { Store } from "@tauri-apps/plugin-store";
 
+/** Цель AI-режима: при срабатывании `hotkey` транскрипт открывается в браузере по `urlTemplate`. */
+export interface AiTarget {
+  id: string;
+  name: string;
+  urlTemplate: string;
+  hotkey: string;
+  enabled: boolean;
+}
+
 export interface AppConfig {
   sttBackend: "local" | "cloudru" | "openrouter";
   language: "ru" | "en" | "auto";
@@ -38,6 +47,8 @@ export interface AppConfig {
   translateModelCloudru: string;
   /** Модель для перевода на OpenRouter */
   translateModelOpenrouter: string;
+  /** AI-режим: список целей со своими хоткеями и URL-шаблонами */
+  aiTargets: AiTarget[];
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -68,6 +79,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   translateDirection: "ru_to_en",
   translateModelCloudru: "Qwen/Qwen2.5-72B-Instruct",
   translateModelOpenrouter: "openai/gpt-4o-mini",
+  aiTargets: [
+    { id: "perplexity", name: "Perplexity", urlTemplate: "https://www.perplexity.ai/search?q={q}", hotkey: "Alt+Shift+1", enabled: true },
+    { id: "chatgpt",    name: "ChatGPT",    urlTemplate: "https://chatgpt.com/?q={q}",            hotkey: "Alt+Shift+2", enabled: true },
+    { id: "claude",     name: "Claude",     urlTemplate: "https://claude.ai/new?q={q}",           hotkey: "Alt+Shift+3", enabled: true },
+  ],
 };
 
 let _store: Store | null = null;
