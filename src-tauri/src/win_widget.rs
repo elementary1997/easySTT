@@ -3,6 +3,25 @@
 // Must match `--widget-corners: 10px` when "round" (see widgetTheme + main).
 const WIDGET_CORNER_RADIUS_CSS_PX: f64 = 10.0;
 
+/// Returns the bottom of the work area (physical pixels from screen top) for the primary monitor.
+/// This is the Y coordinate of the top edge of the taskbar (or full screen height if unavailable).
+pub fn work_area_bottom_px() -> i32 {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    };
+    let mut rect = RECT::default();
+    unsafe {
+        let _ = SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(&mut rect as *mut RECT as *mut std::ffi::c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+    }
+    rect.bottom
+}
+
 pub fn apply_win32_widget_region(w: &tauri::WebviewWindow, corner_style: &str) {
     use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
 

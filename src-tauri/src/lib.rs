@@ -753,16 +753,20 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) {
     let _ = gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
         match event.state() {
             ShortcutState::Pressed => {
-                // Показываем индикатор в левом нижнем углу монитора (без кражи фокуса).
+                // Показываем индикатор над панелью задач в левом нижнем углу (без кражи фокуса).
                 if let Some(ind) = app_clone.get_webview_window("indicator") {
                     if let Ok(Some(mon)) = ind.primary_monitor() {
-                        let sf  = mon.scale_factor();
-                        let mpos = mon.position();
-                        let mh  = mon.size().height as f64;
-                        let margin  = (16.0 * sf) as i32;
-                        let win_h   = (44.0 * sf) as i32;
+                        let sf    = mon.scale_factor();
+                        let mpos  = mon.position();
+                        let margin = (16.0 * sf) as i32;
+                        let win_h  = (44.0 * sf) as i32;
                         let x = mpos.x + margin;
-                        let y = mpos.y + (mh as i32) - win_h - margin;
+                        // On Windows use work area so the widget sits above the taskbar.
+                        #[cfg(windows)]
+                        let bottom = crate::win_widget::work_area_bottom_px();
+                        #[cfg(not(windows))]
+                        let bottom = mpos.y + mon.size().height as i32;
+                        let y = bottom - win_h - margin;
                         let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
                     }
                     let _ = ind.set_always_on_top(true);
