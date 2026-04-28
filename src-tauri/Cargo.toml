@@ -35,7 +35,6 @@ base64 = "0.22"
 async-trait = "0.1"
 whisper-rs = { version = "0.14" }
 tauri-plugin-single-instance = "2"
-urlencoding = "2"
 
 # Win32: HWND region (rounded widget window). Keep version aligned with tauri 2.10+.
 [target.'cfg(windows)'.dependencies]

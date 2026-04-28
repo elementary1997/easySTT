@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import { AppConfig, AiTarget, DEFAULT_CONFIG, loadConfig, saveConfig } from "../lib/store";
+import { AppConfig, DEFAULT_CONFIG, loadConfig, saveConfig } from "../lib/store";
 import "./SettingsPanel.css";
 
-type Tab = "general" | "look" | "backend" | "hotkey" | "ai";
+type Tab = "general" | "look" | "backend" | "hotkey";
 
 
 type ModelInfo = {
@@ -63,10 +63,9 @@ export default function SettingsPanel() {
   const [downloadState, setDownloadState] = useState<ModelDownloadState>(null);
   const [downloadError, setDownloadError] = useState<string>("");
   const [modelsDir, setModelsDir] = useState("");
-  /** null = не захватываем; "ptt" = основной hotkey; иначе id AI-target. */
-  const [hotkeyCapturing, setHotkeyCapturing] = useState<null | "ptt" | string>(null);
+  const [hotkeyCapturing, setHotkeyCapturing] = useState(false);
   const [capturedCombo, setCapturedCombo] = useState("");
-  const captureRef = useRef<null | "ptt" | string>(null);
+  const captureRef = useRef(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
 
   const refreshModelExistence = useCallback(async (catalog: ModelInfo[]) => {
@@ -218,23 +217,17 @@ export default function SettingsPanel() {
     }
   }, [config.openrouterApiKey]);
 
-  const startCapture = useCallback((target: "ptt" | string) => {
+  // Hotkey capture
+  const startCapture = useCallback(() => {
     setCapturedCombo("");
-    setHotkeyCapturing(target);
-    captureRef.current = target;
+    setHotkeyCapturing(true);
+    captureRef.current = true;
   }, []);
 
   const cancelCapture = useCallback(() => {
-    setHotkeyCapturing(null);
-    captureRef.current = null;
+    setHotkeyCapturing(false);
+    captureRef.current = false;
     setCapturedCombo("");
-  }, []);
-
-  const updateAiTarget = useCallback((id: string, patch: Partial<AiTarget>) => {
-    setConfig((c) => ({
-      ...c,
-      aiTargets: c.aiTargets.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-    }));
   }, []);
 
   useEffect(() => {
@@ -243,8 +236,7 @@ export default function SettingsPanel() {
     const onKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const target = captureRef.current;
-      if (!target) return;
+      if (!captureRef.current) return;
 
       const modifiers: string[] = [];
       if (e.ctrlKey) modifiers.push("Ctrl");
@@ -267,18 +259,14 @@ export default function SettingsPanel() {
       const key = codeToTauriKey(e.code);
       const combo = [...modifiers, key].join("+");
       setCapturedCombo(combo);
-      if (target === "ptt") {
-        update("hotkey", combo);
-      } else {
-        updateAiTarget(target, { hotkey: combo });
-      }
-      setHotkeyCapturing(null);
-      captureRef.current = null;
+      update("hotkey", combo);
+      setHotkeyCapturing(false);
+      captureRef.current = false;
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [hotkeyCapturing, cancelCapture, update, updateAiTarget]);
+  }, [hotkeyCapturing, cancelCapture, update]);
 
   return (
     <div className="settings">
@@ -288,7 +276,7 @@ export default function SettingsPanel() {
       </div>
 
       <div className="tabs">
-        {(["general", "look", "backend", "hotkey", "ai"] as Tab[]).map((t) => (
+        {(["general", "look", "backend", "hotkey"] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
             {t === "general"
               ? "Основные"
@@ -296,9 +284,7 @@ export default function SettingsPanel() {
                 ? "Внешний вид"
                 : t === "backend"
                   ? "Распознавание"
-                  : t === "hotkey"
-                    ? "Горячие клавиши"
-                    : "AI-чаты"}
+                  : "Горячие клавиши"}
           </button>
         ))}
       </div>
@@ -727,15 +713,15 @@ export default function SettingsPanel() {
             <div className="field">
               <span className="field-label">Push-to-Talk (PTT) хоткей</span>
               <div className="hotkey-row">
-                <div className={`hotkey-display ${hotkeyCapturing === "ptt" ? "capturing" : ""}`}>
-                  {hotkeyCapturing === "ptt"
+                <div className={`hotkey-display ${hotkeyCapturing ? "capturing" : ""}`}>
+                  {hotkeyCapturing
                     ? (capturedCombo || "Нажмите клавишу...")
                     : config.hotkey || "Не задан"}
                 </div>
-                {hotkeyCapturing === "ptt" ? (
+                {hotkeyCapturing ? (
                   <button className="btn-secondary" onClick={cancelCapture}>Отмена</button>
                 ) : (
-                  <button className="btn-secondary" onClick={() => startCapture("ptt")}>Задать</button>
+                  <button className="btn-secondary" onClick={startCapture}>Задать</button>
                 )}
               </div>
             </div>
@@ -743,53 +729,6 @@ export default function SettingsPanel() {
               Нажмите «Задать» и удержите нужную комбинацию клавиш.
               Удерживайте хоткей во время речи.
             </p>
-          </div>
-        )}
-
-        {tab === "ai" && (
-          <div className="section">
-            <p className="hint">
-              Говорите с удержанием хоткея — текст откроется как поисковый запрос в выбранном AI-чате.
-              Шаблон URL должен содержать <code>{"{q}"}</code> — туда подставится запрос.
-              Перевод в этом режиме игнорируется (AI понимает любой язык).
-            </p>
-            {config.aiTargets.map((t) => {
-              const isCapturing = hotkeyCapturing === t.id;
-              return (
-                <div key={t.id} className="field" style={{ borderTop: "1px solid var(--border, #2a2a3e)", paddingTop: 12 }}>
-                  <label className="field checkbox" style={{ marginBottom: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={t.enabled}
-                      onChange={(e) => updateAiTarget(t.id, { enabled: e.target.checked })}
-                    />
-                    <span><strong>{t.name}</strong></span>
-                  </label>
-                  <div className="hotkey-row" style={{ marginBottom: 6 }}>
-                    <div className={`hotkey-display ${isCapturing ? "capturing" : ""}`}>
-                      {isCapturing ? (capturedCombo || "Нажмите клавишу...") : t.hotkey || "Не задан"}
-                    </div>
-                    {isCapturing ? (
-                      <button className="btn-secondary" onClick={cancelCapture}>Отмена</button>
-                    ) : (
-                      <button
-                        className="btn-secondary"
-                        disabled={!t.enabled}
-                        onClick={() => startCapture(t.id)}
-                      >
-                        Задать
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={t.urlTemplate}
-                    onChange={(e) => updateAiTarget(t.id, { urlTemplate: e.target.value })}
-                    placeholder="https://example.com/?q={q}"
-                  />
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
