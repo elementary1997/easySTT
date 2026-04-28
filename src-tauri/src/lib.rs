@@ -311,6 +311,7 @@ async fn stop_and_transcribe(
             Ok(text) if !text.is_empty() => {
                 let delay = config.inject_delay_ms;
                 let method = config.injection_method.clone();
+                let restore = config.restore_clipboard;
 
                 // Restore focus to the window that was active at PTT press.
                 // Windows: use SetForegroundWindow — no widget hide/show needed.
@@ -329,7 +330,7 @@ async fn stop_and_transcribe(
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
 
-                let inject_result = inject::inject_text(text, &method, delay);
+                let inject_result = inject::inject_text(text, &method, delay, restore);
                 match inject_result {
                     Ok(_) => {
                         let _ = app_clone.emit("transcription-done", text);
