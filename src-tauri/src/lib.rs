@@ -1,3 +1,4 @@
+mod agent_api;
 mod audio;
 mod config;
 mod inject;
@@ -951,6 +952,8 @@ pub fn run() {
 
             let config = app.state::<AppState>().config.lock().unwrap().clone();
             register_hotkey(&app_handle, &config.hotkey);
+
+            agent_api::start(&app_handle);
             if let Some(settings_win) = app.get_webview_window("settings") {
                 let win = settings_win.clone();
                 let ah = app_handle.clone();
