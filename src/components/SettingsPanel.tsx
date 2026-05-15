@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import { AppConfig, DEFAULT_CONFIG, loadConfig, saveConfig } from "../lib/store";
+import PluginsTab from "./PluginsTab";
 import "./SettingsPanel.css";
 
-type Tab = "general" | "look" | "backend" | "hotkey";
+type Tab = "general" | "look" | "backend" | "hotkey" | "plugins";
 
 
 type ModelInfo = {
@@ -276,15 +277,13 @@ export default function SettingsPanel() {
       </div>
 
       <div className="tabs">
-        {(["general", "look", "backend", "hotkey"] as Tab[]).map((t) => (
+        {(["general", "look", "backend", "hotkey", "plugins"] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
-            {t === "general"
-              ? "Основные"
-              : t === "look"
-                ? "Внешний вид"
-                : t === "backend"
-                  ? "Распознавание"
-                  : "Горячие клавиши"}
+            {t === "general" ? "Основные"
+              : t === "look" ? "Внешний вид"
+              : t === "backend" ? "Распознавание"
+              : t === "hotkey" ? "Горячие клавиши"
+              : "🧩 Плагины"}
           </button>
         ))}
       </div>
@@ -356,6 +355,7 @@ export default function SettingsPanel() {
               />
               <span>Запускать при входе в систему</span>
             </label>
+
           </div>
         )}
 
@@ -730,6 +730,13 @@ export default function SettingsPanel() {
               Удерживайте хоткей во время речи.
             </p>
           </div>
+        )}
+
+        {tab === "plugins" && (
+          <PluginsTab
+            plugins={config.plugins}
+            onChange={(plugins) => setConfig((c) => ({ ...c, plugins }))}
+          />
         )}
       </div>
 

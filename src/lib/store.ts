@@ -38,6 +38,17 @@ export interface AppConfig {
   translateModelCloudru: string;
   /** Модель для перевода на OpenRouter */
   translateModelOpenrouter: string;
+  /** Список подключённых плагинов */
+  plugins: PluginEntry[];
+}
+
+export interface PluginEntry {
+  id: string;
+  path: string;
+  enabled: boolean;
+  name: string;
+  version: string;
+  port: number;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -68,6 +79,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   translateDirection: "ru_to_en",
   translateModelCloudru: "Qwen/Qwen2.5-72B-Instruct",
   translateModelOpenrouter: "openai/gpt-4o-mini",
+  plugins: [],
 };
 
 let _store: Store | null = null;

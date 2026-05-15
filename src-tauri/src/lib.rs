@@ -2,12 +2,13 @@ mod agent_api;
 mod audio;
 mod config;
 mod inject;
+mod plugin_manager;
 mod stt;
 #[cfg(windows)]
 mod win_widget;
 
 use audio::AudioRecorder;
-use config::{model_path, models_dir, Config, SttBackend};
+use config::{model_path, models_dir, Config, PluginEntry, SttBackend};
 use serde::Serialize;
 use stt::cloudru::{bearer_for_stt, fetch_model_ids, CloudRuStt, normalize_fm_base_url};
 use stt::local::{transcribe_cached, LocalWhisperCache};
@@ -56,12 +57,11 @@ pub struct AppState {
     /// Set to true to cancel an in-progress model download.
     pub download_cancel: Arc<AtomicBool>,
     /// HWND (as isize) of the foreground window at PTT press time.
-    /// Used to restore focus before text injection — avoids widget hide/show blink.
-    /// On non-Windows the value is always 0 and ignored.
     prev_foreground_hwnd: Mutex<isize>,
     /// True when the app was launched by the OS autostart mechanism (--autostart arg).
-    /// In this mode the widget window stays hidden — only the tray icon is shown.
     pub is_autostart: bool,
+    /// Менеджер дочерних процессов плагинов.
+    pub plugin_manager: plugin_manager::PluginManager,
 }
 
 fn is_cancelled_msg(s: &str) -> bool {
@@ -313,31 +313,42 @@ async fn stop_and_transcribe(
                 let delay = config.inject_delay_ms;
                 let method = config.injection_method.clone();
                 let restore = config.restore_clipboard;
+                let plugins = config.plugins.clone();
 
-                // Restore focus to the window that was active at PTT press.
-                // Windows: use SetForegroundWindow — no widget hide/show needed.
-                // Linux/macOS: skip (global hotkey doesn't steal focus, so the
-                //   target window should still be active in most cases).
-                #[cfg(windows)]
-                if target_hwnd != 0 {
-                    use windows::Win32::Foundation::HWND;
-                    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-                    unsafe { let _ = SetForegroundWindow(HWND(target_hwnd as *mut _)); }
-                    std::thread::sleep(std::time::Duration::from_millis(80));
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = target_hwnd; // suppress unused warning
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
+                // ── Плагины: перехват текста перед инжектом ──────────────────
+                // try_intercept обходит все включённые плагины (таймаут 500 мс каждый).
+                // Если хоть один вернул {intercept:true} — текст не вставляем.
+                let intercepted = plugin_manager::try_intercept(text, &plugins).await;
 
-                let inject_result = inject::inject_text(text, &method, delay, restore);
-                match inject_result {
-                    Ok(_) => {
-                        let _ = app_clone.emit("transcription-done", text);
+                if intercepted {
+                    // Команда выполнена плагином — уведомляем UI без инжекта
+                    let _ = app_clone.emit("transcription-done", text);
+                } else {
+                    // Restore focus to the window that was active at PTT press.
+                    // Windows: use SetForegroundWindow — no widget hide/show needed.
+                    // Linux/macOS: skip (global hotkey doesn't steal focus, so the
+                    //   target window should still be active in most cases).
+                    #[cfg(windows)]
+                    if target_hwnd != 0 {
+                        use windows::Win32::Foundation::HWND;
+                        use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+                        unsafe { let _ = SetForegroundWindow(HWND(target_hwnd as *mut _)); }
+                        std::thread::sleep(std::time::Duration::from_millis(80));
                     }
-                    Err(e) => {
-                        let _ = app_clone.emit("transcription-error", e.to_string());
+                    #[cfg(not(windows))]
+                    {
+                        let _ = target_hwnd; // suppress unused warning
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+
+                    let inject_result = inject::inject_text(text, &method, delay, restore);
+                    match inject_result {
+                        Ok(_) => {
+                            let _ = app_clone.emit("transcription-done", text);
+                        }
+                        Err(e) => {
+                            let _ = app_clone.emit("transcription-error", e.to_string());
+                        }
                     }
                 }
             }
@@ -494,6 +505,155 @@ fn path_str(config: &Config) -> String {
     model_path(&config.local_model_name)
         .to_string_lossy()
         .to_string()
+}
+
+// ─── Plugin management commands ───────────────────────────────────────────────
+
+/// Добавить плагин: запускает исполняемый файл, ждёт старта, читает манифест.
+#[tauri::command]
+async fn add_plugin(
+    path: String,
+    port: u16,
+    state: State<'_, AppState>,
+) -> Result<PluginEntry, String> {
+    if !std::path::Path::new(&path).exists() {
+        return Err(format!("Файл не найден: {path}"));
+    }
+
+    // Генерируем id из времени (без uuid-зависимости)
+    let id = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+
+    // Создаём временную запись чтобы передать в spawn
+    let tmp_entry = PluginEntry {
+        id: id.clone(),
+        path: path.clone(),
+        enabled: true,
+        name: String::new(),
+        version: String::new(),
+        port,
+    };
+
+    state
+        .plugin_manager
+        .spawn(&tmp_entry)
+        .map_err(|e| e.to_string())?;
+
+    // Ждём запуска сервера (до 5 попыток по 1 с)
+    let mut manifest = serde_json::Value::Null;
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if let Ok(m) = plugin_manager::fetch_manifest(port).await {
+            manifest = m;
+            break;
+        }
+    }
+
+    let name = manifest
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| {
+            std::path::Path::new(&path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Плагин")
+        })
+        .to_string();
+    let version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?")
+        .to_string();
+
+    let entry = PluginEntry {
+        id,
+        path,
+        enabled: true,
+        name,
+        version,
+        port,
+    };
+
+    state.config.lock().unwrap().plugins.push(entry.clone());
+    Ok(entry)
+}
+
+/// Удалить плагин (убивает процесс, удаляет из конфига).
+#[tauri::command]
+fn remove_plugin(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.plugin_manager.kill(&id);
+    state
+        .config
+        .lock()
+        .unwrap()
+        .plugins
+        .retain(|p| p.id != id);
+    Ok(())
+}
+
+/// Включить / выключить плагин.
+#[tauri::command]
+fn toggle_plugin(id: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let mut cfg = state.config.lock().unwrap();
+    if let Some(p) = cfg.plugins.iter_mut().find(|p| p.id == id) {
+        p.enabled = enabled;
+        if !enabled {
+            drop(cfg); // снимаем lock перед kill
+            state.plugin_manager.kill(&id);
+        }
+    }
+    Ok(())
+}
+
+/// Открыть окно настроек плагина (POST /open-settings).
+#[tauri::command]
+async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let port = state
+        .config
+        .lock()
+        .unwrap()
+        .plugins
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.port)
+        .ok_or("Плагин не найден")?;
+
+    // Если процесс не запущен — запускаем
+    let entry = state
+        .config
+        .lock()
+        .unwrap()
+        .plugins
+        .iter()
+        .find(|p| p.id == id)
+        .cloned();
+    if let Some(e) = entry {
+        if !state.plugin_manager.is_running(&id) {
+            let _ = state.plugin_manager.spawn(&e);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    plugin_manager::open_settings(port)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Статус каждого плагина: id → running.
+#[tauri::command]
+fn get_plugins_status(
+    state: State<'_, AppState>,
+) -> std::collections::HashMap<String, bool> {
+    let cfg = state.config.lock().unwrap();
+    cfg.plugins
+        .iter()
+        .map(|p| (p.id.clone(), state.plugin_manager.is_running(&p.id)))
+        .collect()
 }
 
 #[tauri::command]
@@ -840,6 +1000,7 @@ pub fn run() {
         download_cancel: Arc::new(AtomicBool::new(false)),
         prev_foreground_hwnd: Mutex::new(0),
         is_autostart: std::env::args().any(|a| a == "--autostart"),
+        plugin_manager: plugin_manager::PluginManager::new(),
     };
 
     tauri::Builder::default()
@@ -856,6 +1017,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state)
         .setup(|app| {
@@ -953,6 +1115,16 @@ pub fn run() {
             let config = app.state::<AppState>().config.lock().unwrap().clone();
             register_hotkey(&app_handle, &config.hotkey);
 
+            // Авто-запуск включённых плагинов
+            {
+                let st = app.state::<AppState>();
+                for plugin in config.plugins.iter().filter(|p| p.enabled) {
+                    if let Err(e) = st.plugin_manager.spawn(plugin) {
+                        eprintln!("[plugins] Не удалось запустить «{}»: {e}", plugin.name);
+                    }
+                }
+            }
+
             agent_api::start(&app_handle);
             if let Some(settings_win) = app.get_webview_window("settings") {
                 let win = settings_win.clone();
@@ -988,6 +1160,11 @@ pub fn run() {
             get_local_stt_build_info,
             test_cloudru,
             test_openrouter,
+            add_plugin,
+            remove_plugin,
+            toggle_plugin,
+            open_plugin_settings,
+            get_plugins_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running easySTT");

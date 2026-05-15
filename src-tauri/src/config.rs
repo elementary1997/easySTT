@@ -16,6 +16,24 @@ pub enum InjectionMethod {
     Typing,
 }
 
+/// Запись об одном подключённом плагине.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEntry {
+    /// Уникальный идентификатор (генерируется при добавлении).
+    pub id: String,
+    /// Путь к исполняемому файлу плагина.
+    pub path: String,
+    /// Включён ли плагин (перехватывает ли текст).
+    pub enabled: bool,
+    /// Отображаемое имя из /plugin-manifest.
+    pub name: String,
+    /// Версия из /plugin-manifest.
+    pub version: String,
+    /// Порт HTTP-сервера плагина.
+    pub port: u16,
+}
+
 fn def_widget_bg_from() -> String {
     "#12121f".to_string()
 }
@@ -108,6 +126,11 @@ pub struct Config {
     /// LLM model used for translation on OpenRouter (chat completions).
     #[serde(default = "def_translate_model_openrouter")]
     pub translate_model_openrouter: String,
+
+    // ── Plugin system ─────────────────────────────────────────────────────
+    /// Список подключённых плагинов.
+    #[serde(default)]
+    pub plugins: Vec<PluginEntry>,
 }
 
 impl Default for Config {
@@ -140,6 +163,7 @@ impl Default for Config {
             translate_direction: "ru_to_en".into(),
             translate_model_cloudru: "Qwen/Qwen2.5-72B-Instruct".into(),
             translate_model_openrouter: "openai/gpt-4o-mini".into(),
+            plugins: vec![],
         }
     }
 }
