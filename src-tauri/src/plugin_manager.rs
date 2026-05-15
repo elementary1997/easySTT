@@ -32,6 +32,8 @@ impl PluginManager {
         }
         let child = std::process::Command::new(&entry.path)
             .arg("--background")
+            .arg("--port")
+            .arg(entry.port.to_string())
             .spawn()
             .map_err(|e| format!("Не удалось запустить «{}»: {e}", entry.name))?;
         map.insert(entry.id.clone(), child);

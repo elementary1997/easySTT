@@ -8,10 +8,11 @@ interface PluginsTabProps {
   onChange: (plugins: PluginEntry[]) => void;
 }
 
+const DEFAULT_PLUGIN_PORT = 8790;
+
 export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
-  const [addPort, setAddPort] = useState(8790);
   const [addError, setAddError] = useState("");
 
   const refreshStatus = useCallback(() => {
@@ -41,15 +42,17 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
       if (!path) return;
 
       setAdding(true);
-      const entry = await invoke<PluginEntry>("add_plugin", { path, port: addPort });
+      const entry = await invoke<PluginEntry>("add_plugin", { path, port: DEFAULT_PLUGIN_PORT });
       onChange([...plugins, entry]);
       refreshStatus();
+      // Auto-open plugin settings so user can configure agent name and commands
+      await invoke("open_plugin_settings", { id: entry.id }).catch(() => {});
     } catch (e) {
       setAddError(String(e));
     } finally {
       setAdding(false);
     }
-  }, [plugins, addPort, onChange, refreshStatus]);
+  }, [plugins, onChange, refreshStatus]);
 
   const handleRemove = useCallback(async (id: string) => {
     if (!confirm("Удалить плагин? Процесс будет остановлен.")) return;
@@ -135,17 +138,6 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
       )}
 
       <div className="plugins-add-row">
-        <div className="field plugins-port-field">
-          <span className="field-label">Порт плагина</span>
-          <input
-            type="number"
-            min={1024}
-            max={65535}
-            value={addPort}
-            onChange={(e) => setAddPort(Number(e.target.value))}
-            className="plugins-port-input"
-          />
-        </div>
         <button
           className="btn-primary btn-sm"
           onClick={handleAdd}
