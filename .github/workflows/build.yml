@@ -35,6 +35,7 @@ jobs:
             libasound2-dev \
             libxdo-dev \
             libvulkan-dev \
+            shaderc \
             pkg-config
 
       - name: Install Vulkan SDK (Windows)
