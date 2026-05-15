@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux system dependencies + Vulkan dev headers
+      - name: Install Linux system dependencies + Vulkan SDK
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
@@ -76,9 +76,14 @@ jobs:
             librsvg2-dev \
             libasound2-dev \
             libxdo-dev \
-            libvulkan-dev \
-            shaderc \
             pkg-config
+
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | \
+            sudo gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/lunarg.gpg > /dev/null
+          echo "deb https://packages.lunarg.com/vulkan jammy main" | \
+            sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
