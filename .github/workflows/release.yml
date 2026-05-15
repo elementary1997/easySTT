@@ -84,13 +84,16 @@ jobs:
         shell: pwsh
         run: |
           $version = (Invoke-RestMethod "https://vulkan.lunarg.com/sdk/latest/windows.json").windows
-          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
-          Invoke-WebRequest -Uri $url -OutFile "VulkanSDK.exe"
-          Start-Process -FilePath "VulkanSDK.exe" -Wait `
+          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan_sdk.exe"
+          Invoke-WebRequest -Uri $url -OutFile "vulkan_sdk.exe"
+          Start-Process -FilePath "vulkan_sdk.exe" -Wait `
             -ArgumentList "--accept-licenses --default-answer --confirm-command install"
-          $sdkPath = "C:\VulkanSDK\$version"
-          echo "VULKAN_SDK=$sdkPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "$sdkPath\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $sdkPath = (Get-ChildItem "C:\VulkanSDK" -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1).FullName
+          if (-not $sdkPath) { throw "Vulkan SDK not found after installation" }
+          "VULKAN_SDK=$sdkPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$sdkPath\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "VULKAN_SDK=$sdkPath"
 
       - uses: actions/setup-node@v4
         with:
