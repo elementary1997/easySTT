@@ -83,7 +83,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          $version = (Invoke-RestMethod "https://vulkan.lunarg.com/sdk/latest/windows.json").version
+          $version = Invoke-RestMethod "https://vulkan.lunarg.com/sdk/latest/windows.json"
           $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
           Invoke-WebRequest -Uri $url -OutFile "VulkanSDK.exe"
           Start-Process -FilePath "VulkanSDK.exe" -Wait `
