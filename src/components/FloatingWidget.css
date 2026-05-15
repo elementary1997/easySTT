@@ -587,6 +587,29 @@
   to   { opacity: 1; }
 }
 
+/* ── Plugin badge ── */
+.plugin-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: tooltip-in 0.15s ease;
+}
+.plugin-badge--listening {
+  background: rgba(76, 132, 255, 0.18);
+  border: 1px solid rgba(76, 132, 255, 0.4);
+  color: #8ab4ff;
+}
+.plugin-badge--done {
+  background: rgba(76, 200, 130, 0.18);
+  border: 1px solid rgba(76, 200, 130, 0.4);
+  color: #7ee8a2;
+}
+
 /* ── Record button ── */
 .record-btn {
   position: relative;

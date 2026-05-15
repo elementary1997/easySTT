@@ -321,7 +321,8 @@ async fn stop_and_transcribe(
                 let intercepted = plugin_manager::try_intercept(text, &plugins).await;
 
                 if intercepted {
-                    // Команда выполнена плагином — уведомляем UI без инжекта
+                    // Команда выполнена плагином — отдельное событие для виджета
+                    let _ = app_clone.emit("plugin-command", text);
                     let _ = app_clone.emit("transcription-done", text);
                 } else {
                     // Restore focus to the window that was active at PTT press.
@@ -623,20 +624,8 @@ async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<
         .map(|p| p.port)
         .ok_or("Плагин не найден")?;
 
-    // Если процесс не запущен — запускаем
-    let entry = state
-        .config
-        .lock()
-        .unwrap()
-        .plugins
-        .iter()
-        .find(|p| p.id == id)
-        .cloned();
-    if let Some(e) = entry {
-        if !state.plugin_manager.is_running(&id) {
-            let _ = state.plugin_manager.spawn(&e);
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+    if !state.plugin_manager.is_running(&id) {
+        return Err("Плагин не запущен. Включите его переключателем.".into());
     }
 
     plugin_manager::open_settings(port)

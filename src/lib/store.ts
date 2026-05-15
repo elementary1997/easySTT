@@ -1,4 +1,5 @@
 import { Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface AppConfig {
   sttBackend: "local" | "cloudru" | "openrouter";
@@ -110,4 +111,5 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   for (const [key, val] of Object.entries(config)) {
     await store.set(key, val);
   }
+  await invoke("apply_config", { config });
 }

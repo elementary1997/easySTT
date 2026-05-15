@@ -70,6 +70,8 @@ export default function FloatingWidget() {
   const [widgetConfig, setWidgetConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [ready, setReady] = useState(false);
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
+  const [pluginCommandText, setPluginCommandText] = useState<string | null>(null);
+  const pluginClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { state, lastText, error, startRecording, stopRecording, cancelTranscription, duration } =
@@ -91,6 +93,7 @@ export default function FloatingWidget() {
 
   const isRecording = state === "recording";
   const isTranscribing = state === "transcribing";
+  const hasPlugins = widgetConfig.plugins.some((p) => p.enabled);
 
   const widgetStyle = useMemo(() => widgetStyleFromConfig(widgetConfig), [widgetConfig]);
   const widgetClassName = useMemo(
@@ -107,7 +110,12 @@ export default function FloatingWidget() {
     const setup = async () => {
       const u1 = await listen("ptt-pressed", () => startRecording());
       const u2 = await listen("ptt-released", () => stopRecording());
-      return () => { u1(); u2(); };
+      const u3 = await listen<string>("plugin-command", (e) => {
+        setPluginCommandText(e.payload);
+        if (pluginClearTimer.current) clearTimeout(pluginClearTimer.current);
+        pluginClearTimer.current = setTimeout(() => setPluginCommandText(null), 3000);
+      });
+      return () => { u1(); u2(); u3(); };
     };
     const cleanup = setup();
     return () => { cleanup.then((fn) => fn?.()); };
@@ -298,9 +306,7 @@ export default function FloatingWidget() {
           </div>
         </div>
 
-        {/* Error tooltip — sibling of widget-body-row, positioned within widget-body.
-            Shares the same enter/leave handlers so mouse moving between trigger→tooltip
-            won't cause a flicker (hide timer is cancelled on enter). */}
+        {/* Error tooltip */}
         {state === "error" && error && errorTooltipOpen && (
           <div
             className="error-tooltip"
@@ -308,6 +314,18 @@ export default function FloatingWidget() {
             onMouseEnter={onTooltipEnter}
             onMouseLeave={onTooltipLeave}
           >{error}</div>
+        )}
+
+        {/* Plugin badge: listening indicator during recording, command feedback after */}
+        {isRecording && hasPlugins && (
+          <div className="plugin-badge plugin-badge--listening">
+            🤖 Слушаю команды
+          </div>
+        )}
+        {!isRecording && pluginCommandText && (
+          <div className="plugin-badge plugin-badge--done">
+            🤖 Команда выполнена
+          </div>
         )}
       </div>
     </div>
