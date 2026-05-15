@@ -66,6 +66,19 @@ impl AudioRecorder {
         let rate = *self.sample_rate.lock().unwrap();
         (samples, rate)
     }
+
+    /// Возвращает Arc на буфер сэмплов — для фонового always-on задания.
+    pub fn samples_arc(&self) -> Arc<Mutex<Vec<f32>>> {
+        Arc::clone(&self.samples)
+    }
+
+    pub fn sample_rate_arc(&self) -> Arc<Mutex<u32>> {
+        Arc::clone(&self.sample_rate)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.stream.is_some()
+    }
 }
 
 pub fn list_microphones() -> Vec<String> {

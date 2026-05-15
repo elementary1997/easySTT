@@ -62,6 +62,10 @@ pub struct AppState {
     pub is_autostart: bool,
     /// Менеджер дочерних процессов плагинов.
     pub plugin_manager: plugin_manager::PluginManager,
+    /// Второй рекордер для фонового прослушивания голосовых команд плагинов.
+    always_on_recorder: Mutex<AudioRecorder>,
+    /// True когда фоновая задача always-on запущена.
+    always_on_active: Arc<AtomicBool>,
 }
 
 fn is_cancelled_msg(s: &str) -> bool {
@@ -508,11 +512,109 @@ fn path_str(config: &Config) -> String {
         .to_string()
 }
 
+// ─── Always-on background listening ──────────────────────────────────────────
+
+fn has_active_plugins(cfg: &Config) -> bool {
+    cfg.plugins.iter().any(|p| p.enabled)
+}
+
+/// Запускает фоновую задачу непрерывного прослушивания, если есть активные плагины.
+/// Безопасен для повторного вызова — не запустит вторую задачу, если уже работает.
+fn start_always_on_if_needed(app: &AppHandle) {
+    let st = match app.try_state::<AppState>() {
+        Some(s) => s,
+        None => return,
+    };
+    if !has_active_plugins(&st.config.lock().unwrap()) {
+        return;
+    }
+    if st.always_on_active.swap(true, Ordering::SeqCst) {
+        return; // уже запущено
+    }
+    let device_name = st.config.lock().unwrap().mic_device_name.clone();
+    if let Err(e) = st.always_on_recorder.lock().unwrap().start(&device_name) {
+        eprintln!("[always-on] не удалось открыть микрофон: {e}");
+        st.always_on_active.store(false, Ordering::SeqCst);
+        return;
+    }
+    let samples_arc = st.always_on_recorder.lock().unwrap().samples_arc();
+    let rate_arc    = st.always_on_recorder.lock().unwrap().sample_rate_arc();
+    let active      = st.always_on_active.clone();
+    let local_cache = st.local_whisper.clone();
+    let app_clone   = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        while active.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if !active.load(Ordering::SeqCst) {
+                break;
+            }
+            // Пропускаем пока идёт PTT-запись
+            {
+                let st2 = app_clone.state::<AppState>();
+                if st2.recorder.lock().unwrap().is_active() {
+                    continue;
+                }
+            }
+            // Снимаем снэпшот и очищаем буфер
+            let samples: Vec<f32> = {
+                let mut buf = samples_arc.lock().unwrap();
+                let snap = buf.clone();
+                buf.clear();
+                snap
+            };
+            let rate = *rate_arc.lock().unwrap();
+            if samples.is_empty() {
+                continue;
+            }
+            // VAD: пропускаем тишину
+            let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
+            if rms < 0.008 {
+                continue;
+            }
+            let st2 = app_clone.state::<AppState>();
+            let config = st2.config.lock().unwrap().clone();
+            let plugins: Vec<_> = config.plugins.iter().filter(|p| p.enabled).cloned().collect();
+            if plugins.is_empty() {
+                continue;
+            }
+            let cancel = Arc::new(AtomicBool::new(false));
+            match transcribe_with_config(&samples, rate, &config, local_cache.clone(), cancel).await {
+                Ok(text) if !text.is_empty() => {
+                    let intercepted = plugin_manager::try_intercept(&text, &plugins).await;
+                    if intercepted {
+                        let _ = app_clone.emit("plugin-command", &text);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Задача завершилась — останавливаем рекордер
+        if let Some(st2) = app_clone.try_state::<AppState>() {
+            st2.always_on_recorder.lock().unwrap().stop();
+        }
+    });
+}
+
+/// Останавливает фоновое прослушивание если больше нет активных плагинов.
+fn stop_always_on_if_needed(app: &AppHandle) {
+    let st = match app.try_state::<AppState>() {
+        Some(s) => s,
+        None => return,
+    };
+    if has_active_plugins(&st.config.lock().unwrap()) {
+        return; // ещё есть активные плагины
+    }
+    st.always_on_active.store(false, Ordering::SeqCst);
+    // Рекордер остановится сам когда задача завершится (видит active=false).
+}
+
 // ─── Plugin management commands ───────────────────────────────────────────────
 
 /// Добавить плагин: запускает исполняемый файл, ждёт старта, читает манифест.
 #[tauri::command]
 async fn add_plugin(
+    app: AppHandle,
     path: String,
     port: u16,
     state: State<'_, AppState>,
@@ -581,56 +683,57 @@ async fn add_plugin(
     };
 
     state.config.lock().unwrap().plugins.push(entry.clone());
+    start_always_on_if_needed(&app);
     Ok(entry)
 }
 
 /// Удалить плагин (убивает процесс, удаляет из конфига).
 #[tauri::command]
-fn remove_plugin(id: String, state: State<'_, AppState>) -> Result<(), String> {
+fn remove_plugin(app: AppHandle, id: String, state: State<'_, AppState>) -> Result<(), String> {
     state.plugin_manager.kill(&id);
-    state
-        .config
-        .lock()
-        .unwrap()
-        .plugins
-        .retain(|p| p.id != id);
+    state.config.lock().unwrap().plugins.retain(|p| p.id != id);
+    stop_always_on_if_needed(&app);
     Ok(())
 }
 
 /// Включить / выключить плагин.
 #[tauri::command]
-fn toggle_plugin(id: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
-    let mut cfg = state.config.lock().unwrap();
-    if let Some(p) = cfg.plugins.iter_mut().find(|p| p.id == id) {
-        p.enabled = enabled;
-        if !enabled {
-            drop(cfg); // снимаем lock перед kill
-            state.plugin_manager.kill(&id);
+fn toggle_plugin(app: AppHandle, id: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        if let Some(p) = cfg.plugins.iter_mut().find(|p| p.id == id) {
+            p.enabled = enabled;
         }
+    }
+    if enabled {
+        let entry = state.config.lock().unwrap().plugins.iter().find(|p| p.id == id).cloned();
+        if let Some(e) = entry {
+            let _ = state.plugin_manager.spawn(&e);
+        }
+        start_always_on_if_needed(&app);
+    } else {
+        state.plugin_manager.kill(&id);
+        stop_always_on_if_needed(&app);
     }
     Ok(())
 }
 
-/// Открыть окно настроек плагина (POST /open-settings).
+/// Открыть окно настроек плагина: убиваем фоновый процесс и запускаем с видимым окном.
 #[tauri::command]
 async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let port = state
+    let entry = state
         .config
         .lock()
         .unwrap()
         .plugins
         .iter()
         .find(|p| p.id == id)
-        .map(|p| p.port)
+        .cloned()
         .ok_or("Плагин не найден")?;
 
-    if !state.plugin_manager.is_running(&id) {
-        return Err("Плагин не запущен. Включите его переключателем.".into());
-    }
-
-    plugin_manager::open_settings(port)
-        .await
-        .map_err(|e| e.to_string())
+    state.plugin_manager.kill(&id);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    state.plugin_manager.spawn_visible(&entry).map_err(|e| e.to_string())
 }
 
 /// Статус каждого плагина: id → running.
@@ -990,6 +1093,8 @@ pub fn run() {
         prev_foreground_hwnd: Mutex::new(0),
         is_autostart: std::env::args().any(|a| a == "--autostart"),
         plugin_manager: plugin_manager::PluginManager::new(),
+        always_on_recorder: Mutex::new(AudioRecorder::new()),
+        always_on_active: Arc::new(AtomicBool::new(false)),
     };
 
     tauri::Builder::default()
@@ -1104,7 +1209,7 @@ pub fn run() {
             let config = app.state::<AppState>().config.lock().unwrap().clone();
             register_hotkey(&app_handle, &config.hotkey);
 
-            // Авто-запуск включённых плагинов
+            // Авто-запуск включённых плагинов + фоновое прослушивание
             {
                 let st = app.state::<AppState>();
                 for plugin in config.plugins.iter().filter(|p| p.enabled) {
@@ -1113,6 +1218,7 @@ pub fn run() {
                     }
                 }
             }
+            start_always_on_if_needed(&app_handle);
 
             agent_api::start(&app_handle);
             if let Some(settings_win) = app.get_webview_window("settings") {

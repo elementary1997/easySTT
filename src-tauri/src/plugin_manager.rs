@@ -40,6 +40,19 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Запускает плагин без флага --background — показывает главное окно.
+    /// Используется для открытия настроек через кнопку в easySTT.
+    pub fn spawn_visible(&self, entry: &PluginEntry) -> Result<(), String> {
+        let mut map = self.children.lock().unwrap();
+        let child = std::process::Command::new(&entry.path)
+            .arg("--port")
+            .arg(entry.port.to_string())
+            .spawn()
+            .map_err(|e| format!("Не удалось запустить «{}»: {e}", entry.name))?;
+        map.insert(entry.id.clone(), child);
+        Ok(())
+    }
+
     /// Убивает процесс плагина.
     pub fn kill(&self, id: &str) {
         if let Some(mut child) = self.children.lock().unwrap().remove(id) {
@@ -84,16 +97,6 @@ pub async fn fetch_manifest(port: u16) -> anyhow::Result<serde_json::Value> {
         .build()?;
     let resp = client.get(&url).send().await?;
     Ok(resp.json().await?)
-}
-
-/// Открывает окно настроек плагина через POST /open-settings.
-pub async fn open_settings(port: u16) -> anyhow::Result<()> {
-    let url = format!("http://127.0.0.1:{port}/open-settings");
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?;
-    client.post(&url).send().await?;
-    Ok(())
 }
 
 /// Пробует перехватить текст у всех включённых плагинов.

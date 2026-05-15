@@ -356,25 +356,6 @@ export default function SettingsPanel() {
               <span>Запускать при входе в систему</span>
             </label>
 
-            <div className="field plugins-status-row">
-              <span className="field-label">🧩 Голосовые команды</span>
-              {config.plugins.length === 0 ? (
-                <span className="plugins-status-none">
-                  Не подключено —{" "}
-                  <button className="btn-link" onClick={() => setTab("plugins")}>
-                    добавить плагин
-                  </button>
-                </span>
-              ) : (
-                <span className="plugins-status-active">
-                  {config.plugins.filter((p) => p.enabled).length} из {config.plugins.length} активен —{" "}
-                  <button className="btn-link" onClick={() => setTab("plugins")}>
-                    настроить
-                  </button>
-                </span>
-              )}
-            </div>
-
           </div>
         )}
 
