@@ -70,8 +70,7 @@ export default function FloatingWidget() {
   const [widgetConfig, setWidgetConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [ready, setReady] = useState(false);
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
-  const [pluginCommandText, setPluginCommandText] = useState<string | null>(null);
-  const pluginClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { state, lastText, error, startRecording, stopRecording, cancelTranscription, duration } =
@@ -110,11 +109,7 @@ export default function FloatingWidget() {
     const setup = async () => {
       const u1 = await listen("ptt-pressed", () => startRecording());
       const u2 = await listen("ptt-released", () => stopRecording());
-      const u3 = await listen<string>("plugin-command", (e) => {
-        setPluginCommandText(e.payload);
-        if (pluginClearTimer.current) clearTimeout(pluginClearTimer.current);
-        pluginClearTimer.current = setTimeout(() => setPluginCommandText(null), 3000);
-      });
+      const u3 = await listen<string>("plugin-command", () => {});
       return () => { u1(); u2(); u3(); };
     };
     const cleanup = setup();
@@ -316,15 +311,10 @@ export default function FloatingWidget() {
           >{error}</div>
         )}
 
-        {/* Plugin badge: listening indicator during recording, command feedback after */}
+        {/* Plugin listening badge during recording — stays inside widget */}
         {isRecording && hasPlugins && (
           <div className="plugin-badge plugin-badge--listening">
             🤖 Слушаю команды
-          </div>
-        )}
-        {!isRecording && pluginCommandText && (
-          <div className="plugin-badge plugin-badge--done">
-            🤖 Команда выполнена
           </div>
         )}
       </div>

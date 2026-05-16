@@ -962,6 +962,9 @@ fn apply_config(config: Config, state: State<'_, AppState>, app: AppHandle) -> R
     }
     {
         let cfg = state.config.lock().unwrap().clone();
+        for plugin in cfg.plugins.iter().filter(|p| p.enabled) {
+            let _ = state.plugin_manager.spawn(plugin);
+        }
         if should_start_always_on(&cfg) {
             start_always_on_if_needed(&app);
         } else {
