@@ -549,7 +549,7 @@ fn start_always_on_if_needed(app: &AppHandle) {
 
     tauri::async_runtime::spawn(async move {
         while active.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_millis(2000)).await;
             if !active.load(Ordering::SeqCst) {
                 break;
             }
@@ -601,9 +601,12 @@ fn start_always_on_if_needed(app: &AppHandle) {
                     } else if result.agent_detected {
                         // Имя агента сказано, команда не распознана — переходим в PTT
                         samples_arc.lock().unwrap().clear();
+                        show_recording_indicator(&app_clone);
                         let _ = app_clone.emit("ptt-pressed", ());
                         tokio::time::sleep(Duration::from_secs(6)).await;
                         let _ = app_clone.emit("ptt-released", ());
+                        // Очищаем буфер чтобы not re-process PTT audio
+                        samples_arc.lock().unwrap().clear();
                     }
                 }
                 _ => {}
@@ -996,6 +999,27 @@ fn show_settings_raised(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Позиционирует и показывает индикатор записи в левом нижнем углу экрана.
+fn show_recording_indicator(app: &AppHandle) {
+    if let Some(ind) = app.get_webview_window("indicator") {
+        if let Ok(Some(mon)) = ind.primary_monitor() {
+            let sf     = mon.scale_factor();
+            let mpos   = mon.position();
+            let margin = (16.0 * sf) as i32;
+            let win_h  = (44.0 * sf) as i32;
+            let x = mpos.x + margin;
+            #[cfg(windows)]
+            let bottom = crate::win_widget::work_area_bottom_px();
+            #[cfg(not(windows))]
+            let bottom = mpos.y + mon.size().height as i32;
+            let y = bottom - win_h - margin;
+            let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+        let _ = ind.set_always_on_top(true);
+        let _ = ind.show();
+    }
+}
+
 /// После скрытия настроек — снова закрепить плашку PTT «поверх окон».
 fn apply_settings_closed(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("widget") {
@@ -1041,25 +1065,7 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) {
     let _ = gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
         match event.state() {
             ShortcutState::Pressed => {
-                // Показываем индикатор над панелью задач в левом нижнем углу (без кражи фокуса).
-                if let Some(ind) = app_clone.get_webview_window("indicator") {
-                    if let Ok(Some(mon)) = ind.primary_monitor() {
-                        let sf    = mon.scale_factor();
-                        let mpos  = mon.position();
-                        let margin = (16.0 * sf) as i32;
-                        let win_h  = (44.0 * sf) as i32;
-                        let x = mpos.x + margin;
-                        // On Windows use work area so the widget sits above the taskbar.
-                        #[cfg(windows)]
-                        let bottom = crate::win_widget::work_area_bottom_px();
-                        #[cfg(not(windows))]
-                        let bottom = mpos.y + mon.size().height as i32;
-                        let y = bottom - win_h - margin;
-                        let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
-                    }
-                    let _ = ind.set_always_on_top(true);
-                    let _ = ind.show();
-                }
+                show_recording_indicator(&app_clone);
                 let _ = app_clone.emit("ptt-pressed", ());
             }
             ShortcutState::Released => {
