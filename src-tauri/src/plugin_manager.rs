@@ -96,10 +96,18 @@ pub async fn open_settings(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub struct InterceptResult {
+    /// At least one plugin consumed the command.
+    pub intercepted: bool,
+    /// Agent name was detected in the text (even if no command matched).
+    pub agent_detected: bool,
+}
+
 /// Пробует перехватить текст у всех включённых плагинов.
-/// Возвращает true если хотя бы один плагин перехватил текст.
 /// Таймаут на один плагин — 500 мс, не блокирует инжект при недоступности.
-pub async fn try_intercept(text: &str, plugins: &[PluginEntry]) -> bool {
+pub async fn try_intercept(text: &str, plugins: &[PluginEntry]) -> InterceptResult {
+    let mut intercepted = false;
+    let mut agent_detected = false;
     for plugin in plugins.iter().filter(|p| p.enabled && p.port > 0) {
         let url = format!("http://127.0.0.1:{}/intercept", plugin.port);
         let Ok(client) = reqwest::Client::builder()
@@ -117,14 +125,13 @@ pub async fn try_intercept(text: &str, plugins: &[PluginEntry]) -> bool {
             continue;
         };
         if let Ok(body) = resp.json::<serde_json::Value>().await {
-            if body
-                .get("intercept")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                return true;
+            if body.get("intercept").and_then(|v| v.as_bool()).unwrap_or(false) {
+                intercepted = true;
+            }
+            if body.get("agentDetected").and_then(|v| v.as_bool()).unwrap_or(false) {
+                agent_detected = true;
             }
         }
     }
-    false
+    InterceptResult { intercepted, agent_detected }
 }

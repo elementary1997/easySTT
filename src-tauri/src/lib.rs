@@ -322,9 +322,9 @@ async fn stop_and_transcribe(
                 // ── Плагины: перехват текста перед инжектом ──────────────────
                 // try_intercept обходит все включённые плагины (таймаут 500 мс каждый).
                 // Если хоть один вернул {intercept:true} — текст не вставляем.
-                let intercepted = plugin_manager::try_intercept(text, &plugins).await;
+                let result = plugin_manager::try_intercept(text, &plugins).await;
 
-                if intercepted {
+                if result.intercepted {
                     // Команда выполнена плагином — отдельное событие для виджета
                     let _ = app_clone.emit("plugin-command", text);
                     let _ = app_clone.emit("transcription-done", text);
@@ -560,14 +560,22 @@ fn start_always_on_if_needed(app: &AppHandle) {
                     continue;
                 }
             }
-            // Снимаем снэпшот и очищаем буфер
-            let samples: Vec<f32> = {
-                let mut buf = samples_arc.lock().unwrap();
-                let snap = buf.clone();
-                buf.clear();
-                snap
-            };
             let rate = *rate_arc.lock().unwrap();
+            // Снимаем снэпшот последних 5 секунд (скользящее окно)
+            let samples: Vec<f32> = {
+                let buf = samples_arc.lock().unwrap();
+                let max = rate as usize * 5;
+                if buf.len() > max { buf[buf.len() - max..].to_vec() } else { buf.clone() }
+            };
+            // Обрезаем буфер до 7 секунд, не очищая полностью
+            {
+                let mut buf = samples_arc.lock().unwrap();
+                let keep = rate as usize * 7;
+                if buf.len() > keep {
+                    let drain = buf.len() - keep;
+                    buf.drain(..drain);
+                }
+            }
             if samples.is_empty() {
                 continue;
             }
@@ -585,9 +593,17 @@ fn start_always_on_if_needed(app: &AppHandle) {
             let cancel = Arc::new(AtomicBool::new(false));
             match transcribe_with_config(&samples, rate, &config, local_cache.clone(), cancel).await {
                 Ok(text) if !text.is_empty() => {
-                    let intercepted = plugin_manager::try_intercept(&text, &plugins).await;
-                    if intercepted {
+                    let result = plugin_manager::try_intercept(&text, &plugins).await;
+                    if result.intercepted {
+                        // Команда выполнена — сбрасываем буфер
+                        samples_arc.lock().unwrap().clear();
                         let _ = app_clone.emit("plugin-command", &text);
+                    } else if result.agent_detected {
+                        // Имя агента сказано, команда не распознана — переходим в PTT
+                        samples_arc.lock().unwrap().clear();
+                        let _ = app_clone.emit("ptt-pressed", ());
+                        tokio::time::sleep(Duration::from_secs(6)).await;
+                        let _ = app_clone.emit("ptt-released", ());
                     }
                 }
                 _ => {}
@@ -941,12 +957,8 @@ fn apply_config(config: Config, state: State<'_, AppState>, app: AppHandle) -> R
             win_widget::apply_win32_widget_region(&_w, &corner);
         }
     }
-    // Запускаем включённые плагины, если они ещё не запущены
     {
         let cfg = state.config.lock().unwrap().clone();
-        for plugin in cfg.plugins.iter().filter(|p| p.enabled) {
-            let _ = state.plugin_manager.spawn(plugin);
-        }
         if should_start_always_on(&cfg) {
             start_always_on_if_needed(&app);
         } else {

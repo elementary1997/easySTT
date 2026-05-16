@@ -149,12 +149,6 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
 
       {addError && <div className="plugins-error">{addError}</div>}
 
-      <div className="plugins-hint">
-        <strong>Как добавить плагин:</strong> соберите плагин (<code>cargo tauri build</code>),
-        нажмите «Добавить», выберите <strong>standalone-бинарник</strong> из{" "}
-        <code>target/release/</code> — не установщик из <code>bundle/nsis/</code>.
-        easySTT запустит его в фоне и подключится автоматически.
-      </div>
     </div>
   );
 }
