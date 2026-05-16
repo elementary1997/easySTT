@@ -806,7 +806,7 @@ fn toggle_plugin(app: AppHandle, id: String, enabled: bool, state: State<'_, App
 
 /// Открыть окно настроек плагина через HTTP /open-settings.
 #[tauri::command]
-async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<(), String> {
+async fn open_plugin_settings(id: String, state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let port = state
         .config
         .lock()
@@ -825,7 +825,14 @@ async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<
 
     plugin_manager::open_settings(port)
         .await
-        .map_err(|e| format!("Не удалось открыть настройки: {e}"))
+        .map_err(|e| format!("Не удалось открыть настройки: {e}"))?;
+
+    // Снимаем always-on-top с окна настроек easySTT, чтобы плагин мог выйти поверх.
+    // При следующем открытии настроек show_settings_raised снова поднимет его.
+    if let Some(s) = app.get_webview_window("settings") {
+        let _ = s.set_always_on_top(false);
+    }
+    Ok(())
 }
 
 /// Статус каждого плагина: id → running.
@@ -1055,6 +1062,7 @@ fn show_settings_raised(app: &AppHandle) -> Result<(), String> {
         .ok_or("Окно настроек не найдено")?;
     if let Some(widget) = app.get_webview_window("widget") {
         let _ = widget.set_always_on_top(false);
+        let _ = widget.hide();
     }
     let _ = settings.set_always_on_top(true);
     settings
@@ -1086,9 +1094,10 @@ fn show_recording_indicator(app: &AppHandle) {
     }
 }
 
-/// После скрытия настроек — снова закрепить плашку PTT «поверх окон».
+/// После скрытия настроек — снова показать виджет и закрепить его «поверх окон».
 fn apply_settings_closed(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("widget") {
+        let _ = w.show();
         let _ = w.set_always_on_top(true);
     }
     if let Some(s) = app.get_webview_window("settings") {
