@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./RecordingIndicator.css";
 
-type State = "recording" | "transcribing" | "command";
+type State = "listening" | "recording" | "transcribing" | "command";
 
 export default function RecordingIndicator() {
-  const [state, setState] = useState<State>("recording");
+  const [state, setState] = useState<State>("listening");
 
   useEffect(() => {
     const subs = [
+      listen("always-on-vad",            () => setState("listening")),
       listen("ptt-pressed",              () => setState("recording")),
       listen("ptt-released",             () => setState("transcribing")),
       listen("transcription-done",       () => setState("transcribing")),
@@ -21,6 +22,12 @@ export default function RecordingIndicator() {
 
   return (
     <div className="indicator">
+      {state === "listening" && (
+        <>
+          <span className="indicator-wave" />
+          <span>Слушаю...</span>
+        </>
+      )}
       {state === "recording" && (
         <>
           <span className="indicator-dot" />

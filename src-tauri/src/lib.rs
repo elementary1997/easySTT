@@ -584,10 +584,14 @@ fn start_always_on_if_needed(app: &AppHandle) {
             if rms < 0.008 {
                 continue;
             }
+            // Показываем индикатор сразу — до Whisper, как Алиса/Alexa
+            let _ = app_clone.emit("always-on-vad", ());
+            show_recording_indicator(&app_clone);
             let st2 = app_clone.state::<AppState>();
             let config = st2.config.lock().unwrap().clone();
             let plugins: Vec<_> = config.plugins.iter().filter(|p| p.enabled).cloned().collect();
             if plugins.is_empty() {
+                if let Some(ind) = app_clone.get_webview_window("indicator") { let _ = ind.hide(); }
                 continue;
             }
             let cancel = Arc::new(AtomicBool::new(false));
@@ -595,9 +599,13 @@ fn start_always_on_if_needed(app: &AppHandle) {
                 Ok(text) if !text.is_empty() => {
                     let result = plugin_manager::try_intercept(&text, &plugins).await;
                     if result.intercepted {
-                        // Команда выполнена — сбрасываем буфер
+                        // Команда выполнена — показываем плашку 2с, потом скрываем
                         samples_arc.lock().unwrap().clear();
                         let _ = app_clone.emit("plugin-command", &text);
+                        tokio::time::sleep(Duration::from_millis(2000)).await;
+                        if let Some(ind) = app_clone.get_webview_window("indicator") {
+                            let _ = ind.hide();
+                        }
                     } else if result.agent_detected {
                         // Имя агента сказано, команда не распознана — переходим в PTT
                         samples_arc.lock().unwrap().clear();
@@ -607,9 +615,19 @@ fn start_always_on_if_needed(app: &AppHandle) {
                         let _ = app_clone.emit("ptt-released", ());
                         // Очищаем буфер чтобы not re-process PTT audio
                         samples_arc.lock().unwrap().clear();
+                    } else {
+                        // Текст есть, но агент не упомянут — скрываем индикатор
+                        if let Some(ind) = app_clone.get_webview_window("indicator") {
+                            let _ = ind.hide();
+                        }
                     }
                 }
-                _ => {}
+                _ => {
+                    // Ничего не распознано или ошибка — скрываем индикатор
+                    if let Some(ind) = app_clone.get_webview_window("indicator") {
+                        let _ = ind.hide();
+                    }
+                }
             }
         }
         // Задача завершилась — останавливаем рекордер

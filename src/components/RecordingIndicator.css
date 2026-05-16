@@ -88,6 +88,20 @@ html.indicator-surface #root {
   40%           { transform: scale(1);   opacity: 1; }
 }
 
+/* ── Listening/always-on state ─────────────────────────────────────────── */
+.indicator-wave {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4c84ff;
+  flex-shrink: 0;
+  animation: ind-wave-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ind-wave-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.7);  box-shadow: 0 0 0 0   rgba(76, 132, 255, 0.6); }
+  50%       { opacity: 1;    transform: scale(1.05); box-shadow: 0 0 0 5px rgba(76, 132, 255, 0); }
+}
+
 /* ── Command-done state ────────────────────────────────────────────────── */
 .indicator-check {
   width: 14px;
