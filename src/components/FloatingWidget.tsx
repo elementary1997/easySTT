@@ -92,7 +92,6 @@ export default function FloatingWidget() {
 
   const isRecording = state === "recording";
   const isTranscribing = state === "transcribing";
-  const hasPlugins = widgetConfig.plugins.some((p) => p.enabled);
 
   const widgetStyle = useMemo(() => widgetStyleFromConfig(widgetConfig), [widgetConfig]);
   const widgetClassName = useMemo(
@@ -311,12 +310,6 @@ export default function FloatingWidget() {
           >{error}</div>
         )}
 
-        {/* Plugin listening badge during recording — stays inside widget */}
-        {isRecording && hasPlugins && (
-          <div className="plugin-badge plugin-badge--listening">
-            🤖 Слушаю команды
-          </div>
-        )}
       </div>
     </div>
   );
