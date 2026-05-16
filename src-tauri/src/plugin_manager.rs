@@ -96,6 +96,16 @@ pub async fn open_settings(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Сбрасывает конфиг плагина и завершает его процесс через POST /reset.
+pub async fn reset_plugin(port: u16) -> anyhow::Result<()> {
+    let url = format!("http://127.0.0.1:{port}/reset");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?;
+    client.post(&url).send().await?;
+    Ok(())
+}
+
 pub struct InterceptResult {
     /// At least one plugin consumed the command.
     pub intercepted: bool,

@@ -716,9 +716,16 @@ async fn add_plugin(
     Ok(entry)
 }
 
-/// Удалить плагин (убивает процесс, удаляет из конфига).
+/// Удалить плагин: сбрасывает его конфиг через /reset, убивает процесс, удаляет из конфига easySTT.
 #[tauri::command]
-fn remove_plugin(app: AppHandle, id: String, state: State<'_, AppState>) -> Result<(), String> {
+async fn remove_plugin(app: AppHandle, id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let port = state.config.lock().unwrap()
+        .plugins.iter().find(|p| p.id == id).map(|p| p.port);
+    // Просим плагин удалить свой конфиг и выйти
+    if let Some(port) = port {
+        let _ = plugin_manager::reset_plugin(port).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
     state.plugin_manager.kill(&id);
     state.config.lock().unwrap().plugins.retain(|p| p.id != id);
     stop_always_on_if_needed(&app);
