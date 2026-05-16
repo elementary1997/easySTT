@@ -37,6 +37,7 @@ whisper-rs = { version = "0.14" }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 axum = { version = "0.7", features = ["ws"] }
+zip = { version = "2", features = ["deflate"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 

@@ -640,6 +640,49 @@ fn stop_always_on_if_needed(app: &AppHandle) {
 
 // ─── Plugin management commands ───────────────────────────────────────────────
 
+/// Если path — zip-архив, извлекает исполняемый файл рядом с архивом и возвращает его путь.
+fn extract_plugin_from_zip(zip_path: &str) -> Result<String, String> {
+    let file = std::fs::File::open(zip_path)
+        .map_err(|e| format!("Не удалось открыть архив: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Ошибка чтения архива: {e}"))?;
+
+    let out_dir = std::path::Path::new(zip_path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        // Пропускаем директории и вложенные пути
+        if name.ends_with('/') || name.contains('/') || name.contains('\\') { continue; }
+
+        #[cfg(windows)]
+        let is_exe = name.to_lowercase().ends_with(".exe");
+        #[cfg(not(windows))]
+        let is_exe = !name.contains('.');
+
+        if !is_exe { continue; }
+
+        let out_path = out_dir.join(&name);
+        let mut out_file = std::fs::File::create(&out_path)
+            .map_err(|e| format!("Ошибка создания файла «{name}»: {e}"))?;
+        std::io::copy(&mut entry, &mut out_file)
+            .map_err(|e| format!("Ошибка распаковки «{name}»: {e}"))?;
+
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(0o755));
+        }
+
+        return Ok(out_path.to_string_lossy().to_string());
+    }
+
+    Err("Исполняемый файл не найден в архиве".to_string())
+}
+
 /// Добавить плагин: запускает исполняемый файл, ждёт старта, читает манифест.
 #[tauri::command]
 async fn add_plugin(
@@ -648,6 +691,13 @@ async fn add_plugin(
     port: u16,
     state: State<'_, AppState>,
 ) -> Result<PluginEntry, String> {
+    // Если передан zip-архив — распаковываем сначала
+    let path = if path.to_lowercase().ends_with(".zip") {
+        extract_plugin_from_zip(&path)?
+    } else {
+        path
+    };
+
     if !std::path::Path::new(&path).exists() {
         return Err(format!("Файл не найден: {path}"));
     }

@@ -34,7 +34,7 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
         multiple: false,
         title: "Выберите исполняемый файл плагина",
         filters: [
-          { name: "Исполняемый файл", extensions: ["exe", "AppImage", ""] },
+          { name: "Плагин (.exe, .zip, AppImage)", extensions: ["exe", "zip", "AppImage", ""] },
         ],
       });
       if (!selected) return;
