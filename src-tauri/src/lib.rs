@@ -518,6 +518,10 @@ fn has_active_plugins(cfg: &Config) -> bool {
     cfg.plugins.iter().any(|p| p.enabled)
 }
 
+fn should_start_always_on(cfg: &Config) -> bool {
+    cfg.plugins.iter().any(|p| p.enabled)
+}
+
 /// Запускает фоновую задачу непрерывного прослушивания, если есть активные плагины.
 /// Безопасен для повторного вызова — не запустит вторую задачу, если уже работает.
 fn start_always_on_if_needed(app: &AppHandle) {
@@ -718,22 +722,28 @@ fn toggle_plugin(app: AppHandle, id: String, enabled: bool, state: State<'_, App
     Ok(())
 }
 
-/// Открыть окно настроек плагина: убиваем фоновый процесс и запускаем с видимым окном.
+/// Открыть окно настроек плагина через HTTP /open-settings.
 #[tauri::command]
 async fn open_plugin_settings(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let entry = state
+    let port = state
         .config
         .lock()
         .unwrap()
         .plugins
         .iter()
         .find(|p| p.id == id)
-        .cloned()
+        .map(|p| p.port)
         .ok_or("Плагин не найден")?;
 
-    state.plugin_manager.kill(&id);
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    state.plugin_manager.spawn_visible(&entry).map_err(|e| e.to_string())
+    if !state.plugin_manager.is_running(&id) {
+        return Err(
+            "Плагин не запущен. Проверьте, что добавлен standalone-бинарник (target/release/), а не установщик.".into()
+        );
+    }
+
+    plugin_manager::open_settings(port)
+        .await
+        .map_err(|e| format!("Не удалось открыть настройки: {e}"))
 }
 
 /// Статус каждого плагина: id → running.
@@ -929,6 +939,18 @@ fn apply_config(config: Config, state: State<'_, AppState>, app: AppHandle) -> R
         {
             let corner = state.config.lock().unwrap().widget_corner_style.clone();
             win_widget::apply_win32_widget_region(&_w, &corner);
+        }
+    }
+    // Запускаем включённые плагины, если они ещё не запущены
+    {
+        let cfg = state.config.lock().unwrap().clone();
+        for plugin in cfg.plugins.iter().filter(|p| p.enabled) {
+            let _ = state.plugin_manager.spawn(plugin);
+        }
+        if should_start_always_on(&cfg) {
+            start_always_on_if_needed(&app);
+        } else {
+            state.always_on_active.store(false, Ordering::SeqCst);
         }
     }
     let _ = app.emit("config-updated", json!({}));

@@ -283,7 +283,7 @@ export default function SettingsPanel() {
               : t === "look" ? "Внешний вид"
               : t === "backend" ? "Распознавание"
               : t === "hotkey" ? "Горячие клавиши"
-              : "🧩 Плагины"}
+              : "Плагины"}
           </button>
         ))}
       </div>
