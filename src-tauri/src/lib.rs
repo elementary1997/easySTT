@@ -778,8 +778,20 @@ async fn remove_plugin(app: AppHandle, id: String, state: State<'_, AppState>) -
     }
     state.plugin_manager.kill(&id);
     state.config.lock().unwrap().plugins.retain(|p| p.id != id);
+    // Сохраняем обновлённый список плагинов на диск, чтобы при следующем запуске
+    // удалённый плагин не был запущен снова.
+    persist_plugins(&app, &state.config.lock().unwrap().plugins);
     stop_always_on_if_needed(&app);
     Ok(())
+}
+
+fn persist_plugins(app: &AppHandle, plugins: &[crate::config::PluginEntry]) {
+    if let Ok(store) = app.store("settings.json") {
+        if let Ok(val) = serde_json::to_value(plugins) {
+            let _ = store.set("plugins", val);
+            let _ = store.save();
+        }
+    }
 }
 
 /// Включить / выключить плагин.
@@ -791,6 +803,8 @@ fn toggle_plugin(app: AppHandle, id: String, enabled: bool, state: State<'_, App
             p.enabled = enabled;
         }
     }
+    // Сохраняем изменённый enabled на диск
+    persist_plugins(&app, &state.config.lock().unwrap().plugins);
     if enabled {
         let entry = state.config.lock().unwrap().plugins.iter().find(|p| p.id == id).cloned();
         if let Some(e) = entry {
