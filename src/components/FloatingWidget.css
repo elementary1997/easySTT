@@ -826,3 +826,26 @@
   font-weight: 600;
   letter-spacing: 0.01em;
 }
+
+.status-agent-thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #a78bfa;
+  font-weight: 500;
+}
+
+.agent-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  animation: agent-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}

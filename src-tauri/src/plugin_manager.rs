@@ -126,10 +126,10 @@ pub async fn reset_plugin(port: u16) -> anyhow::Result<()> {
 }
 
 pub struct InterceptResult {
-    /// At least one plugin consumed the command.
     pub intercepted: bool,
-    /// Agent name was detected in the text (even if no command matched).
     pub agent_detected: bool,
+    /// Human-readable status from the plugin (e.g. "AI обрабатывает команду...").
+    pub feedback: Option<String>,
 }
 
 /// Пробует перехватить текст у всех включённых плагинов.
@@ -137,6 +137,7 @@ pub struct InterceptResult {
 pub async fn try_intercept(text: &str, plugins: &[PluginEntry]) -> InterceptResult {
     let mut intercepted = false;
     let mut agent_detected = false;
+    let mut feedback: Option<String> = None;
     for plugin in plugins.iter().filter(|p| p.enabled && p.port > 0) {
         let url = format!("http://127.0.0.1:{}/intercept", plugin.port);
         let Ok(client) = reqwest::Client::builder()
@@ -160,7 +161,10 @@ pub async fn try_intercept(text: &str, plugins: &[PluginEntry]) -> InterceptResu
             if body.get("agentDetected").and_then(|v| v.as_bool()).unwrap_or(false) {
                 agent_detected = true;
             }
+            if let Some(f) = body.get("feedback").and_then(|v| v.as_str()) {
+                feedback = Some(f.to_string());
+            }
         }
     }
-    InterceptResult { intercepted, agent_detected }
+    InterceptResult { intercepted, agent_detected, feedback }
 }

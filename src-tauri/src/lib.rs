@@ -328,6 +328,10 @@ async fn stop_and_transcribe(
                     // Команда выполнена плагином — отдельное событие для виджета
                     let _ = app_clone.emit("plugin-command", text);
                     let _ = app_clone.emit("transcription-done", text);
+                    // Если плагин сообщил статус (агент обрабатывает через LLM) — показываем в виджете
+                    if let Some(fb) = result.feedback {
+                        let _ = app_clone.emit("plugin-feedback", fb);
+                    }
                 } else {
                     // Restore focus to the window that was active at PTT press.
                     // Windows: use SetForegroundWindow — no widget hide/show needed.

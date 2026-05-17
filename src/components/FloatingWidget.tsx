@@ -70,6 +70,8 @@ export default function FloatingWidget() {
   const [widgetConfig, setWidgetConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [ready, setReady] = useState(false);
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
+  const [agentFeedback, setAgentFeedback] = useState<string | null>(null);
+  const agentFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -108,8 +110,17 @@ export default function FloatingWidget() {
     const setup = async () => {
       const u1 = await listen("ptt-pressed", () => startRecording());
       const u2 = await listen("ptt-released", () => stopRecording());
-      const u3 = await listen<string>("plugin-command", () => {});
-      return () => { u1(); u2(); u3(); };
+      const u3 = await listen<string>("plugin-command", () => {
+        // Command was handled — clear thinking badge
+        if (agentFeedbackTimer.current) clearTimeout(agentFeedbackTimer.current);
+        setAgentFeedback(null);
+      });
+      const u4 = await listen<string>("plugin-feedback", (e) => {
+        setAgentFeedback(e.payload);
+        if (agentFeedbackTimer.current) clearTimeout(agentFeedbackTimer.current);
+        agentFeedbackTimer.current = setTimeout(() => setAgentFeedback(null), 15000);
+      });
+      return () => { u1(); u2(); u3(); u4(); };
     };
     const cleanup = setup();
     return () => { cleanup.then((fn) => fn?.()); };
@@ -274,7 +285,13 @@ export default function FloatingWidget() {
                 </button>
               </div>
             )}
-            {state === "idle" && !lastText && (
+            {agentFeedback && state === "idle" && (
+              <span className="status-agent-thinking">
+                <span className="agent-thinking-dot" />
+                {agentFeedback}
+              </span>
+            )}
+            {state === "idle" && !lastText && !agentFeedback && (
               <span className="status-hint">
                 Удерживай для&nbsp;записи
                 {widgetConfig.translateEnabled && (
@@ -284,7 +301,7 @@ export default function FloatingWidget() {
                 )}
               </span>
             )}
-            {state === "idle" && lastText && (
+            {state === "idle" && lastText && !agentFeedback && (
               <span className="status-ok">✓ Вставлено</span>
             )}
             {state === "error" && !error && (
