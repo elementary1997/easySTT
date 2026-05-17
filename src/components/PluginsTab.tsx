@@ -104,7 +104,7 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
                 />
                 <div className="plugin-info">
                   <span className="plugin-name">{p.name || p.path.split(/[\\/]/).pop()}</span>
-                  <span className="plugin-meta">v{p.version} · порт {p.port}</span>
+                  <span className="plugin-meta">v{p.version}</span>
                   <span className="plugin-path" title={p.path}>{p.path}</span>
                 </div>
               </div>
