@@ -87,13 +87,23 @@ pub async fn fetch_manifest(port: u16) -> anyhow::Result<serde_json::Value> {
 }
 
 /// Открывает окно настроек плагина через POST /open-settings.
+/// Делает до 10 попыток с паузой 1 с — сервер плагина может ещё стартовать.
 pub async fn open_settings(port: u16) -> anyhow::Result<()> {
     let url = format!("http://127.0.0.1:{port}/open-settings");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()?;
-    client.post(&url).send().await?;
-    Ok(())
+    let mut last_err: anyhow::Error = anyhow::anyhow!("плагин не отвечает на порту {port}");
+    for attempt in 0..=10 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        match client.post(&url).send().await {
+            Ok(_) => return Ok(()),
+            Err(e) => last_err = e.into(),
+        }
+    }
+    Err(last_err)
 }
 
 /// Сбрасывает конфиг плагина и завершает его процесс через POST /reset.
