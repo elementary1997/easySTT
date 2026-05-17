@@ -726,9 +726,9 @@ async fn add_plugin(
         .spawn(&tmp_entry)
         .map_err(|e| e.to_string())?;
 
-    // Ждём запуска сервера (до 5 попыток по 1 с)
+    // Ждём запуска сервера (до 30 попыток по 1 с — WebView2 на Windows стартует долго)
     let mut manifest = serde_json::Value::Null;
-    for _ in 0..5 {
+    for _ in 0..30 {
         tokio::time::sleep(Duration::from_secs(1)).await;
         if let Ok(m) = plugin_manager::fetch_manifest(port).await {
             manifest = m;
@@ -762,6 +762,7 @@ async fn add_plugin(
     };
 
     state.config.lock().unwrap().plugins.push(entry.clone());
+    persist_plugins(&app, &state.config.lock().unwrap().plugins);
     start_always_on_if_needed(&app);
     Ok(entry)
 }
@@ -849,16 +850,48 @@ async fn open_plugin_settings(id: String, state: State<'_, AppState>, app: AppHa
     Ok(())
 }
 
-/// Статус каждого плагина: id → running.
+/// Статус каждого плагина: id → HTTP-сервер отвечает (не просто процесс жив).
+/// Попутно обновляет version "?" когда сервер уже доступен.
 #[tauri::command]
-fn get_plugins_status(
+async fn get_plugins_status(
     state: State<'_, AppState>,
-) -> std::collections::HashMap<String, bool> {
-    let cfg = state.config.lock().unwrap();
-    cfg.plugins
-        .iter()
-        .map(|p| (p.id.clone(), state.plugin_manager.is_running(&p.id)))
-        .collect()
+    app: AppHandle,
+) -> Result<std::collections::HashMap<String, bool>, String> {
+    let plugins = state.config.lock().unwrap().plugins.clone();
+    let mut result = std::collections::HashMap::new();
+    let mut updated = false;
+
+    for plugin in &plugins {
+        let alive = state.plugin_manager.is_running(&plugin.id);
+        let ready = alive && plugin_manager::is_http_ready(plugin.port).await;
+        result.insert(plugin.id.clone(), ready);
+
+        if ready && (plugin.version == "?" || plugin.version.is_empty()) {
+            if let Ok(m) = plugin_manager::fetch_manifest(plugin.port).await {
+                if let Some(v) = m.get("version").and_then(|v| v.as_str()) {
+                    let mut cfg = state.config.lock().unwrap();
+                    if let Some(p) = cfg.plugins.iter_mut().find(|p| p.id == plugin.id) {
+                        p.version = v.to_string();
+                        updated = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if updated {
+        let plugins = state.config.lock().unwrap().plugins.clone();
+        persist_plugins(&app, &plugins);
+        let _ = app.emit("plugins-version-updated", ());
+    }
+
+    Ok(result)
+}
+
+/// Текущий список плагинов из памяти (для обновления UI после авто-обновления версии).
+#[tauri::command]
+fn get_plugins(state: State<'_, AppState>) -> Vec<PluginEntry> {
+    state.config.lock().unwrap().plugins.clone()
 }
 
 #[tauri::command]
@@ -1389,6 +1422,7 @@ pub fn run() {
             toggle_plugin,
             open_plugin_settings,
             get_plugins_status,
+            get_plugins,
         ])
         .run(tauri::generate_context!())
         .expect("error while running easySTT");

@@ -75,12 +75,21 @@ impl Drop for PluginManager {
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
+/// Быстрая проверка: отвечает ли HTTP-сервер плагина (300 мс таймаут).
+pub async fn is_http_ready(port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{port}/status");
+    let Ok(client) = reqwest::Client::builder().timeout(Duration::from_millis(300)).build() else {
+        return false;
+    };
+    client.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
+}
+
 /// Запрашивает /plugin-manifest у запущенного плагина.
-/// Таймаут 5 с — для ожидания старта процесса.
+/// Таймаут 2 с — для разовых проверок когда сервер уже работает.
 pub async fn fetch_manifest(port: u16) -> anyhow::Result<serde_json::Value> {
     let url = format!("http://127.0.0.1:{port}/plugin-manifest");
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(2))
         .build()?;
     let resp = client.get(&url).send().await?;
     Ok(resp.json().await?)

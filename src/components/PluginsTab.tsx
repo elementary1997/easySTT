@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { PluginEntry } from "../lib/store";
 
@@ -21,11 +22,21 @@ export default function PluginsTab({ plugins, onChange }: PluginsTabProps) {
       .catch(() => {});
   }, []);
 
+  const refreshPlugins = useCallback(() => {
+    invoke<PluginEntry[]>("get_plugins").then(onChange).catch(() => {});
+  }, [onChange]);
+
   useEffect(() => {
     refreshStatus();
     const id = setInterval(refreshStatus, 3000);
     return () => clearInterval(id);
   }, [refreshStatus]);
+
+  // Обновляем список плагинов когда бэкенд авто-обновил версию "?"
+  useEffect(() => {
+    const unsub = listen("plugins-version-updated", refreshPlugins);
+    return () => { unsub.then((u) => u()); };
+  }, [refreshPlugins]);
 
   const handleAdd = useCallback(async () => {
     setAddError("");
