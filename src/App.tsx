@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import FloatingWidget from "./components/FloatingWidget";
 import SettingsPanel from "./components/SettingsPanel";
@@ -7,11 +7,11 @@ import RecordingIndicator from "./components/RecordingIndicator";
 type WindowLabel = "widget" | "settings" | "indicator";
 
 export default function App() {
-  const [windowLabel, setWindowLabel] = useState<WindowLabel>("widget");
+  // Resolve before mounting: widget effects must never run in other windows.
+  const windowLabel = getCurrentWindow().label as WindowLabel;
 
   useEffect(() => {
-    const label = getCurrentWindow().label as WindowLabel;
-    setWindowLabel(label);
+    const label = windowLabel;
     if (label === "widget") {
       document.documentElement.classList.add("widget-surface");
       document.body.classList.add("widget-surface");
@@ -26,7 +26,7 @@ export default function App() {
       document.documentElement.classList.remove("settings-surface");
       document.documentElement.classList.remove("indicator-surface");
     };
-  }, []);
+  }, [windowLabel]);
 
   if (windowLabel === "settings")  return <SettingsPanel />;
   if (windowLabel === "indicator") return <RecordingIndicator />;

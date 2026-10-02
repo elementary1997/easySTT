@@ -27,7 +27,12 @@ jobs:
             --title "easySTT ${{ github.ref_name }}" \
             --notes "## Что нового
 
-          Смотри коммиты для подробностей.
+          - Исправлен пустой экран настроек на Debian/Linux с проблемными GPU-драйверами.
+          - Запуск только в трее: плавающие окна не появляются при старте и закрытии настроек.
+          - Настройки открываются из трея или при повторном ручном запуске.
+          - Добавлена сборка и проверка нативного интерфейса на Debian 13 в CI.
+
+          На Linux диктовка (глобальный хоткей и вставка) требует X11; полноценная поддержка нативных Wayland-приложений пока отсутствует.
 
           ## Скачать
 
@@ -44,7 +49,8 @@ jobs:
 
           Скачай модель прямо в настройках (вкладка «Распознавание» → «Локальная модель»)."
 
-          ID=$(gh release view "${{ github.ref_name }}" --json id --jq '.id')
+          # tauri-action expects the numeric REST ID, not the GraphQL node ID.
+          ID=$(gh release view "${{ github.ref_name }}" --json databaseId --jq '.databaseId')
           echo "release_id=$ID" >> $GITHUB_OUTPUT
 
   # Параллельные Vulkan-сборки Linux + Windows
@@ -76,6 +82,9 @@ jobs:
             librsvg2-dev \
             libasound2-dev \
             libxdo-dev \
+            libssl-dev \
+            libclang-dev \
+            cmake \
             pkg-config
 
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | \

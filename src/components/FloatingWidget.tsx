@@ -68,7 +68,6 @@ function tryStartWindowMove(e: ReactMouseEvent) {
 
 export default function FloatingWidget() {
   const [widgetConfig, setWidgetConfig] = useState<AppConfig>(DEFAULT_CONFIG);
-  const [ready, setReady] = useState(false);
   const [errorTooltipOpen, setErrorTooltipOpen] = useState(false);
   const [agentFeedback, setAgentFeedback] = useState<string | null>(null);
   const agentFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,18 +128,17 @@ export default function FloatingWidget() {
   useEffect(() => {
     const refresh = () => {
       loadConfig()
-        .then((cfg) => { setWidgetConfig(cfg); setReady(true); })
-        .catch(() => { setWidgetConfig(DEFAULT_CONFIG); setReady(true); });
+        .then((cfg) => { setWidgetConfig(cfg); })
+        .catch(() => { setWidgetConfig(DEFAULT_CONFIG); });
     };
     // На старте: загружаем конфиг из store И синхронизируем его с Rust-бэкендом,
     // чтобы PTT-хоткей и транскрипция работали сразу (без открытия настроек).
     loadConfig()
       .then((cfg) => {
         setWidgetConfig(cfg);
-        setReady(true);
         void invoke("apply_config", { config: cfg });
       })
-      .catch(() => { setWidgetConfig(DEFAULT_CONFIG); setReady(true); });
+      .catch(() => { setWidgetConfig(DEFAULT_CONFIG); });
     const p = listen("config-updated", refresh);
     return () => { p.then((u) => u()); };
   }, []);
@@ -175,19 +173,6 @@ export default function FloatingWidget() {
       if (mount) mount.style.removeProperty("background-color");
     };
   }, [widgetConfig.widgetBgTo]);
-
-  /* Показываем окно только после первого рендера с правильными цветами.
-     При автозапуске (--autostart) окно остаётся скрытым — только трей. */
-  useEffect(() => {
-    if (!ready) return;
-    invoke<boolean>("is_autostart_launch").then((autostart) => {
-      if (!autostart) {
-        requestAnimationFrame(() => void getCurrentWindow().show());
-      }
-    }).catch(() => {
-      requestAnimationFrame(() => void getCurrentWindow().show());
-    });
-  }, [ready]);
 
   const handleMouseDown = useCallback(() => startRecording(), [startRecording]);
   const handleMouseUp = useCallback(() => stopRecording(), [stopRecording]);

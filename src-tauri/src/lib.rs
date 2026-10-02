@@ -599,10 +599,9 @@ fn start_always_on_if_needed(app: &AppHandle) {
                 Ok(text) if !text.is_empty() => {
                     let result = plugin_manager::try_intercept(&text, &plugins).await;
                     if result.intercepted {
-                        // Команда выполнена — показываем плашку 2с, потом скрываем
+                        // Команда выполнена — очищаем записанные семплы.
                         samples_arc.lock().unwrap().clear();
                         let _ = app_clone.emit("plugin-command", &text);
-                        show_recording_indicator(&app_clone);
                         tokio::time::sleep(Duration::from_millis(2000)).await;
                         if let Some(ind) = app_clone.get_webview_window("indicator") {
                             let _ = ind.hide();
@@ -610,7 +609,6 @@ fn start_always_on_if_needed(app: &AppHandle) {
                     } else if result.agent_detected {
                         // Имя агента сказано, команда не распознана — переходим в PTT
                         samples_arc.lock().unwrap().clear();
-                        show_recording_indicator(&app_clone);
                         let _ = app_clone.emit("always-on-vad", ());
                         let _ = app_clone.emit("ptt-pressed", ());
                         tokio::time::sleep(Duration::from_secs(6)).await;
@@ -1124,33 +1122,8 @@ fn show_settings_raised(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Позиционирует и показывает индикатор записи в левом нижнем углу экрана.
-fn show_recording_indicator(app: &AppHandle) {
-    if let Some(ind) = app.get_webview_window("indicator") {
-        if let Ok(Some(mon)) = ind.primary_monitor() {
-            let sf     = mon.scale_factor();
-            let mpos   = mon.position();
-            let margin = (16.0 * sf) as i32;
-            let win_h  = (44.0 * sf) as i32;
-            let x = mpos.x + margin;
-            #[cfg(windows)]
-            let bottom = crate::win_widget::work_area_bottom_px();
-            #[cfg(not(windows))]
-            let bottom = mpos.y + mon.size().height as i32;
-            let y = bottom - win_h - margin;
-            let _ = ind.set_position(tauri::PhysicalPosition::new(x, y));
-        }
-        let _ = ind.set_always_on_top(true);
-        let _ = ind.show();
-    }
-}
-
-/// После скрытия настроек — снова показать виджет и закрепить его «поверх окон».
+/// Closing settings returns to tray-only operation.
 fn apply_settings_closed(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("widget") {
-        let _ = w.show();
-        let _ = w.set_always_on_top(true);
-    }
     if let Some(s) = app.get_webview_window("settings") {
         let _ = s.set_always_on_top(false);
     }
@@ -1191,7 +1164,6 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) {
     let _ = gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
         match event.state() {
             ShortcutState::Pressed => {
-                show_recording_indicator(&app_clone);
                 let _ = app_clone.emit("ptt-pressed", ());
             }
             ShortcutState::Released => {
@@ -1204,26 +1176,15 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) {
 // ─── Tray Setup ──────────────────────────────────────────────────────────────
 
 fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
-    let toggle = MenuItem::with_id(app, "toggle", "Показать / Скрыть", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Настройки", true, None::<&str>)?;
     let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &settings, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &separator, &quit])?;
     let mut tray = TrayIconBuilder::new().menu(&menu).tooltip("easySTT");
     if let Some(icon) = app.default_window_icon().cloned() {
         tray = tray.icon(icon);
     }
     tray.on_menu_event(|app, event| match event.id.as_ref() {
-            "toggle" => {
-                if let Some(win) = app.get_webview_window("widget") {
-                    if win.is_visible().unwrap_or(false) {
-                        let _ = win.hide();
-                    } else {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-                }
-            }
             "settings" => {
                 let _ = show_settings_raised(&app);
             }
@@ -1233,14 +1194,7 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::DoubleClick { .. } = event {
                 let app = tray.app_handle();
-                if let Some(win) = app.get_webview_window("widget") {
-                    if win.is_visible().unwrap_or(false) {
-                        let _ = win.hide();
-                    } else {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-                }
+                let _ = show_settings_raised(app);
             }
         })
         .build(app)?;
@@ -1250,6 +1204,14 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
 pub fn run() {
+    // WebKitGTK's DMA-BUF renderer can leave blank windows or crash its web
+    // process with Linux GPU drivers (including Nouveau on Debian/Wayland).
+    // Set this before GTK/WebKit or any worker threads start; respect overrides.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let state = AppState {
         recorder: Mutex::new(AudioRecorder::new()),
         config: Mutex::new(Config::default()),
@@ -1265,10 +1227,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Вторая попытка запуска — показываем уже работающий виджет.
-            if let Some(w) = app.get_webview_window("widget") {
-                let _ = w.show();
-                let _ = w.set_focus();
+            // Explicit second launch opens settings; background startup stays in tray.
+            if !_args.iter().any(|arg| arg == "--autostart") {
+                let _ = show_settings_raised(app);
             }
         }))
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -1285,8 +1246,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             // Устанавливаем нативный фон окна = сохранённый widgetBgTo (или дефолт).
             // Это синхронизирует угловые пиксели (за CSS border-radius) с цветом виджета.
-            // Окно стартует скрытым (visible: false в tauri.conf.json) — React покажет его
-            // сам после применения цветов, чтобы избежать чёрного кадра при инициализации.
+            // Окно остаётся скрытым: приложение работает из трея и по глобальному хоткею.
             #[allow(unused_variables)]
             if let Some(w) = app.get_webview_window("widget") {
                 // Должно совпадать с store до вызова apply_config из UI: иначе при первом
@@ -1346,26 +1306,6 @@ pub fn run() {
                     });
                 }
             }
-            // Linux: окно visible:true по умолчанию (tauri.linux.conf.json).
-            // При автозапуске (--autostart) виджет должен оставаться скрытым — только трей.
-            // Иначе показываем с небольшой задержкой на случай гонки рендера.
-            #[cfg(target_os = "linux")]
-            {
-                let ah = app_handle.clone();
-                let autostart = app.state::<AppState>().is_autostart;
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                    if let Some(w) = ah.get_webview_window("widget") {
-                        if autostart {
-                            let _ = w.hide();
-                        } else {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                });
-            }
-
             // Принудительно выставляем always-on-top для виджета при старте
             // (конфиг tauri.conf.json устанавливает его, но явный вызов надёжнее на Windows).
             if let Some(w) = app.get_webview_window("widget") {

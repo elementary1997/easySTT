@@ -5,6 +5,7 @@ target/
 # Node
 node_modules/
 dist/
+__pycache__/
 
 # Tauri generated
 src-tauri/gen/

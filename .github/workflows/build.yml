@@ -7,6 +7,45 @@ on:
     branches: [main]
 
 jobs:
+  debian:
+    name: Debian 13 native UI
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Install build and smoke-test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential xz-utils cmake pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libasound2-dev libxdo-dev libssl-dev libclang-dev \
+            libvulkan-dev glslc \
+            python3-gi gir1.2-atspi-2.0 at-spi2-core dbus xvfb xauth libgl1-mesa-dri
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: debian-13-vulkan
+      - run: npm ci
+      - name: Build Debian package (Vulkan)
+        run: npx tauri build --bundles deb -- --features whisper-vulkan
+      - name: Test native settings and tray-only operation
+        env:
+          # Docker on GitHub runners does not allow WebKit's nested sandbox.
+          # This is scoped to the isolated CI smoke test, never the shipped app.
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1'
+        run: xvfb-run -a dbus-run-session -- python3 scripts/debian_smoke.py src-tauri/target/release/easystt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easystt-debian13-vulkan-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
   build:
     strategy:
       fail-fast: false
@@ -34,6 +73,9 @@ jobs:
             librsvg2-dev \
             libasound2-dev \
             libxdo-dev \
+            libssl-dev \
+            libclang-dev \
+            cmake \
             pkg-config
 
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | \
@@ -82,7 +124,7 @@ jobs:
         with:
           name: easystt-linux-vulkan-deb
           path: src-tauri/target/release/bundle/deb/*.deb
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload Windows artifact
         if: matrix.platform == 'windows-latest'
@@ -90,4 +132,4 @@ jobs:
         with:
           name: easystt-windows-vulkan-exe
           path: src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: warn
+          if-no-files-found: error
