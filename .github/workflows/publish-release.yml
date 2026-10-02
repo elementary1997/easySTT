@@ -1,0 +1,49 @@
+name: Publish verified release
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-v0.1.1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: v0.1.1
+    steps:
+      - name: Verify builds and release assets
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json
+          tag_object=$(jq -r '.object.sha' tag.json)
+          if [ "$(jq -r '.object.type' tag.json)" = tag ]; then
+            release_commit=$(gh api "repos/$GH_REPO/git/tags/$tag_object" --jq '.object.sha')
+          else
+            release_commit=$tag_object
+          fi
+          for run_id in 37076777037 37076777233; do
+            gh api "repos/$GH_REPO/actions/runs/$run_id" > run.json
+            jq -e --arg sha "$release_commit" \
+              '.status == "completed" and .conclusion == "success" and .head_sha == $sha' run.json
+          done
+          gh release view "$RELEASE_TAG" --json tagName,isPrerelease,assets > release.json
+          jq -e --arg tag "$RELEASE_TAG" '
+            .tagName == $tag and .isPrerelease == false and
+            ([.assets[] | select(.size > 0) | .name] as $names |
+              all([".deb", ".AppImage", ".exe", ".msi"][];
+                . as $suffix | any($names[]; endswith($suffix))))
+          ' release.json
+
+      - name: Publish v0.1.1
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
