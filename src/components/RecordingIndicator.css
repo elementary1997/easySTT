@@ -7,7 +7,7 @@
    This is the only reliable way to get rounded corners on a transparent
    Tauri window without corner artifacts from box-shadow or background bleed.
 ────────────────────────────────────────────────────────────────────────── */
-html.indicator-surface {
+html:not([data-os="linux"]).indicator-surface {
   clip-path: inset(0 round 22px);
   overflow: hidden;
 }
@@ -112,4 +112,12 @@ html.indicator-surface #root {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.indicator-error {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff3550;
+  flex-shrink: 0;
 }

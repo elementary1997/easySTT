@@ -18,8 +18,9 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates curl git build-essential xz-utils cmake pkg-config \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            libasound2-dev libxdo-dev libssl-dev libclang-dev \
+            libasound2-dev libpulse-dev libxdo-dev libssl-dev libclang-dev \
             libvulkan-dev glslc \
+            pulseaudio pulseaudio-utils \
             python3-gi gir1.2-atspi-2.0 at-spi2-core dbus xvfb xauth libgl1-mesa-dri
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +40,9 @@ jobs:
           # Docker on GitHub runners does not allow WebKit's nested sandbox.
           # This is scoped to the isolated CI smoke test, never the shipped app.
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1'
-        run: xvfb-run -a dbus-run-session -- python3 scripts/debian_smoke.py src-tauri/target/release/easystt
+        run: |
+          xvfb-run -a dbus-run-session -- python3 scripts/debian_smoke.py src-tauri/target/release/easystt
+          xvfb-run -a dbus-run-session -- python3 scripts/debian_audio_smoke.py src-tauri/target/release/easystt
       - uses: actions/upload-artifact@v4
         with:
           name: easystt-debian13-vulkan-deb
@@ -72,6 +75,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libasound2-dev \
+            libpulse-dev \
             libxdo-dev \
             libssl-dev \
             libclang-dev \

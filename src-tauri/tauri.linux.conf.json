@@ -23,6 +23,26 @@
         "focus": false
       },
       {
+        "label": "indicator",
+        "title": "easySTT Recording",
+        "width": 180,
+        "height": 44,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": false,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "focusable": false,
+        "minWidth": 180,
+        "minHeight": 44,
+        "maxWidth": 180,
+        "maxHeight": 44,
+        "backgroundColor": "#0e101c"
+      },
+      {
         "label": "settings",
         "title": "easySTT — Настройки",
         "backgroundColor": "#0c1020",

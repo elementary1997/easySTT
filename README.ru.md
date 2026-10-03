@@ -49,6 +49,8 @@
 
 Имена файлов: `ggml-tiny.bin`, `ggml-base.bin` и т.д. (как в списке в настройках). Квантованные веса можно положить, если переименовать в тот же шаблон `ggml-<имя>.bin`.
 
+На Linux список микрофонов берётся из PipeWire/PulseAudio: понятные системные названия без выходов «Monitor» и служебных дублей ALSA. Выберите устройство в «Настройки → Основные» или используйте системный микрофон. После подключения устройства обновите список. Во время записи и обработки внизу по центру появляется небольшой индикатор; после завершения он скрывается.
+
 ## Чёрный экран на Linux
 
 Приложение по умолчанию отключает DMA-BUF-рендерер WebKitGTK, который может давать пустые окна с некоторыми GPU-драйверами (в том числе Nouveau на Debian/Wayland). Для старой установленной версии используйте `WEBKIT_DISABLE_DMABUF_RENDERER=1 easystt`. Явно заданная переменная окружения сохраняет приоритет; `WEBKIT_DISABLE_DMABUF_RENDERER=0` возвращает стандартный рендерер. Это не отключает ускорение Whisper.
@@ -60,7 +62,7 @@
 **Пакеты Linux (пример Debian/Ubuntu):**
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-  libasound2-dev libxdo-dev libssl-dev libclang-dev cmake pkg-config
+  libasound2-dev libpulse-dev libxdo-dev libssl-dev libclang-dev cmake pkg-config
 ```
 
 ```bash
@@ -78,6 +80,8 @@ npm run tauri:build:vulkan  # Vulkan (часто Linux)
 ```
 
 На Linux генератор Vulkan-шейдеров whisper.cpp не поддерживает пробелы в пути сборки. Если проект находится, например, в `My projects`, задайте путь без пробелов: `CARGO_TARGET_DIR=/tmp/easystt-target npm run tauri:build:vulkan`.
+
+При доступном X11-дисплее окна Linux используют X11/XWayland, чтобы индикатор записи размещался внизу по центру. Явно заданный `GDK_BACKEND` сохраняет приоритет.
 
 ## Разработка
 

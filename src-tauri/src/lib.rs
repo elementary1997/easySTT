@@ -17,7 +17,7 @@ use stt::openrouter::OpenRouterStt;
 use stt::translate::{translate_via_cloudru, translate_via_openrouter};
 use stt::SttBackend as Trait;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::utils::config::Color;
@@ -49,6 +49,7 @@ fn parse_hex_color(hex: &str) -> Option<Color> {
 
 pub struct AppState {
     recorder: Mutex<AudioRecorder>,
+    indicator_revision: AtomicU64,
     config: Mutex<Config>,
     /// Reused [WhisperContext] for the active local model (see [transcribe_cached]).
     local_whisper: Arc<Mutex<Option<LocalWhisperCache>>>,
@@ -73,11 +74,55 @@ fn is_cancelled_msg(s: &str) -> bool {
     s.contains("отмен") || s.contains("cancell")
 }
 
-/// Скрываем индикатор записи через `delay_ms` после завершения транскрипции.
-async fn auto_hide_indicator(app: &AppHandle, delay_ms: u64) {
+/// The hidden controller window stays hidden; only this status pill is shown.
+fn show_indicator(app: &AppHandle, status: &str) -> u64 {
+    let revision = app.state::<AppState>().indicator_revision.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = app.emit("recording-status", status);
+    if let Some(window) = app.get_webview_window("indicator") {
+        if !window.is_visible().unwrap_or(false) {
+            let monitor = window.cursor_position().ok()
+                .and_then(|p| window.monitor_from_point(p.x, p.y).ok().flatten())
+                .or_else(|| window.primary_monitor().ok().flatten());
+            #[cfg(target_os = "linux")]
+            let _ = window.with_webview(|webview| {
+                use gtk::prelude::*;
+                // WebKitGTK's default minimum is 200x200, which prevents a
+                // fixed-size top-level window from shrinking to a status pill.
+                webview.inner().set_size_request(180, 44);
+            });
+            let _ = window.set_focusable(false);
+            let _ = window.show();
+            // GTK only realizes hidden windows on first show; apply the pill's
+            // size and input shape after that instead of GTK's 200x200 default.
+            let _ = window.set_size(tauri::LogicalSize::new(180.0, 44.0));
+            #[cfg(not(target_os = "linux"))]
+            let _ = window.set_ignore_cursor_events(true);
+            if let Some(monitor) = monitor {
+                let area = monitor.work_area();
+                let scale = monitor.scale_factor();
+                let width = (180.0 * scale).round() as i32;
+                let height = (44.0 * scale).round() as i32;
+                let margin = (24.0 * scale).round() as i32;
+                let _ = window.set_position(tauri::PhysicalPosition::new(
+                    area.position.x + (area.size.width as i32 - width) / 2,
+                    area.position.y + area.size.height as i32 - height - margin,
+                ));
+            }
+        }
+    }
+    revision
+}
+
+fn hide_indicator(app: &AppHandle) {
+    app.state::<AppState>().indicator_revision.fetch_add(1, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("indicator") { let _ = window.hide(); }
+}
+
+/// An old completion timer must never hide a newly started recording.
+async fn auto_hide_indicator(app: &AppHandle, delay_ms: u64, revision: u64) {
     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-    if let Some(w) = app.get_webview_window("indicator") {
-        let _ = w.hide();
+    if app.state::<AppState>().indicator_revision.load(Ordering::SeqCst) == revision {
+        hide_indicator(app);
     }
 }
 
@@ -91,7 +136,7 @@ async fn until_user_cancel(cancel: Arc<AtomicBool>) {
 // ─── Tauri Commands ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-async fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
+async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     // Capture the currently focused window BEFORE recording starts.
     // The user is actively typing in some editor — that's our injection target.
     // We'll restore focus there after transcription instead of hiding the widget.
@@ -103,17 +148,21 @@ async fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
     }
 
     let device_name = state.config.lock().unwrap().mic_device_name.clone();
-    state
-        .recorder
-        .lock()
-        .unwrap()
-        .start(&device_name)
-        .map_err(|e| e.to_string())
+    let result = state.recorder.lock().unwrap().start(&device_name).map_err(|e| e.to_string());
+    match &result {
+        Ok(()) => { show_indicator(&app, "recording"); }
+        Err(error) => {
+            let _ = app.emit("transcription-error", error);
+            hide_indicator(&app);
+        }
+    }
+    result
 }
 
 #[tauri::command]
-fn list_microphones() -> Vec<String> {
-    audio::list_microphones()
+async fn list_microphones() -> Result<Vec<audio::Microphone>, String> {
+    tauri::async_runtime::spawn_blocking(audio::list_microphones)
+        .await.map_err(|error| error.to_string())
 }
 
 #[derive(Serialize)]
@@ -270,9 +319,7 @@ async fn cancel_transcription(app: AppHandle, state: State<'_, AppState>) -> Res
         .transcription_cancel
         .store(true, Ordering::SeqCst);
     let _ = app.emit("transcription-cancelled", "Обработка отменена");
-    if let Some(ind) = app.get_webview_window("indicator") {
-        let _ = ind.hide();
-    }
+    hide_indicator(&app);
     Ok(())
 }
 
@@ -284,8 +331,10 @@ async fn stop_and_transcribe(
     let (samples, sample_rate) = state.recorder.lock().unwrap().stop();
     let config = state.config.lock().unwrap().clone();
     if samples.is_empty() {
+        hide_indicator(&app);
         return Err("Нет аудиоданных".into());
     }
+    let indicator_revision = show_indicator(&app, "transcribing");
 
     let app_clone = app.clone();
     let local_cache = {
@@ -308,10 +357,11 @@ async fn stop_and_transcribe(
         if cancel.load(Ordering::SeqCst) {
             let _ = app_clone.emit("transcription-cancelled", "Обработка отменена");
             cancel.store(false, Ordering::SeqCst);
-            auto_hide_indicator(&app_clone, 800).await;
+            auto_hide_indicator(&app_clone, 800, indicator_revision).await;
             return;
         }
 
+        let mut indicator_status = "error";
         match &result {
             Ok(text) if !text.is_empty() => {
                 let delay = config.inject_delay_ms;
@@ -325,6 +375,7 @@ async fn stop_and_transcribe(
                 let result = plugin_manager::try_intercept(text, &plugins).await;
 
                 if result.intercepted {
+                    indicator_status = "done";
                     // Команда выполнена плагином — отдельное событие для виджета
                     let _ = app_clone.emit("plugin-command", text);
                     let _ = app_clone.emit("transcription-done", text);
@@ -353,6 +404,7 @@ async fn stop_and_transcribe(
                     let inject_result = inject::inject_text(text, &method, delay, restore);
                     match inject_result {
                         Ok(_) => {
+                            indicator_status = "done";
                             let _ = app_clone.emit("transcription-done", text);
                         }
                         Err(e) => {
@@ -372,7 +424,10 @@ async fn stop_and_transcribe(
             }
         }
         cancel.store(false, Ordering::SeqCst);
-        auto_hide_indicator(&app_clone, 1200).await;
+        if app_clone.state::<AppState>().indicator_revision.load(Ordering::SeqCst) == indicator_revision {
+            let revision = show_indicator(&app_clone, indicator_status);
+            auto_hide_indicator(&app_clone, 1200, revision).await;
+        }
     });
 
     Ok(())
@@ -602,10 +657,7 @@ fn start_always_on_if_needed(app: &AppHandle) {
                         // Команда выполнена — очищаем записанные семплы.
                         samples_arc.lock().unwrap().clear();
                         let _ = app_clone.emit("plugin-command", &text);
-                        tokio::time::sleep(Duration::from_millis(2000)).await;
-                        if let Some(ind) = app_clone.get_webview_window("indicator") {
-                            let _ = ind.hide();
-                        }
+
                     } else if result.agent_detected {
                         // Имя агента сказано, команда не распознана — переходим в PTT
                         samples_arc.lock().unwrap().clear();
@@ -1212,8 +1264,16 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
+    // Absolute placement and the existing hotkey/injection backend use X11.
+    // Prefer XWayland in a Wayland desktop when available, respecting overrides.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("DISPLAY").is_some() {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
     let state = AppState {
         recorder: Mutex::new(AudioRecorder::new()),
+        indicator_revision: AtomicU64::new(0),
         config: Mutex::new(Config::default()),
         local_whisper: Arc::new(Mutex::new(None)),
         transcription_cancel: Arc::new(AtomicBool::new(false)),

@@ -1,6 +1,6 @@
 [package]
 name = "easystt"
-version = "0.1.1"
+version = "0.1.2"
 description = "Speech to text utility"
 authors = []
 license = ""
@@ -59,6 +59,10 @@ whisper-vulkan = ["whisper-rs/vulkan"]
 # Только macOS, Apple GPU
 whisper-metal = ["whisper-rs/metal"]
 local-stt = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libpulse-binding = "2.30"
+gtk = "0.18"
 
 [profile.release]
 # Local Whisper is CPU-bound; "s" (size) heavily slows inference. Prefer speed.

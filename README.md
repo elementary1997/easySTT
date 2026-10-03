@@ -49,6 +49,8 @@ Models live under:
 
 Files: `ggml-tiny.bin`, `ggml-base.bin`, etc. (match the name selected in settings.)
 
+Microphones use the system names from PipeWire/PulseAudio on Linux; speaker monitors and ALSA service aliases are excluded. Select an input in Settings → General, or use the system default. Refresh the list after connecting a device. A small status pill appears at the bottom center during recording and processing, and hides when finished.
+
 ## Blank windows on Linux
 
 The app disables WebKitGTK’s DMA-BUF renderer by default to avoid blank windows with affected GPU drivers, including Nouveau on Debian/Wayland. For older installed versions, run `WEBKIT_DISABLE_DMABUF_RENDERER=1 easystt`. Explicit environment overrides are respected; `WEBKIT_DISABLE_DMABUF_RENDERER=0` restores the default renderer. Whisper GPU acceleration is unaffected.
@@ -60,7 +62,7 @@ The app disables WebKitGTK’s DMA-BUF renderer by default to avoid blank window
 **Linux system packages (Debian/Ubuntu example):**
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-  libasound2-dev libxdo-dev libssl-dev libclang-dev cmake pkg-config
+  libasound2-dev libpulse-dev libxdo-dev libssl-dev libclang-dev cmake pkg-config
 ```
 
 ```bash
@@ -79,6 +81,8 @@ npm run tauri:build:vulkan  # Vulkan (often Linux)
 ```
 
 On Linux, whisper.cpp's Vulkan shader generator does not support spaces in the build path. For a checkout under a directory such as `My projects`, use a target path without spaces: `CARGO_TARGET_DIR=/tmp/easystt-target npm run tauri:build:vulkan`.
+
+When an X11 display is available, Linux windows use X11/XWayland by default so the recording indicator can be positioned at the bottom center. An explicit `GDK_BACKEND` setting is respected.
 
 ## Development
 

@@ -1,30 +1,38 @@
 name: Publish verified release
 
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/publish-release.yml]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Completed release tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: write
   actions: read
 
 concurrency:
-  group: publish-v0.1.1
+  group: publish-${{ inputs.tag || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: v0.1.1
+      RELEASE_TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
-      - name: Verify builds and release assets
+      - name: Verify matching builds and release assets
         run: |
           set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json
           tag_object=$(jq -r '.object.sha' tag.json)
           if [ "$(jq -r '.object.type' tag.json)" = tag ]; then
@@ -32,10 +40,23 @@ jobs:
           else
             release_commit=$tag_object
           fi
-          for run_id in 37076777037 37076777233; do
-            gh api "repos/$GH_REPO/actions/runs/$run_id" > run.json
-            jq -e --arg sha "$release_commit" \
-              '.status == "completed" and .conclusion == "success" and .head_sha == $sha' run.json
+          # Both the release builds and Debian's native UI/audio checks must
+          # pass for exactly the tagged source before anything is published.
+          for workflow in build.yml release.yml; do
+            verified=false
+            for attempt in $(seq 1 60); do
+              gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?head_sha=$release_commit&event=push" > runs.json
+              conclusion=$(jq -r --arg sha "$release_commit" '
+                [.workflow_runs[] | select(.head_sha == $sha)] | first |
+                if .status == "completed" then .conclusion else "pending" end
+              ' runs.json)
+              if [ "$conclusion" = success ]; then verified=true; break; fi
+              if [ "$conclusion" != pending ]; then
+                echo "$workflow did not pass: $conclusion"; exit 1
+              fi
+              sleep 20
+            done
+            [ "$verified" = true ] || { echo "$workflow timed out"; exit 1; }
           done
           gh release view "$RELEASE_TAG" --json tagName,isPrerelease,assets > release.json
           jq -e --arg tag "$RELEASE_TAG" '
@@ -45,5 +66,5 @@ jobs:
                 . as $suffix | any($names[]; endswith($suffix))))
           ' release.json
 
-      - name: Publish v0.1.1
+      - name: Publish release
         run: gh release edit "$RELEASE_TAG" --draft=false --latest

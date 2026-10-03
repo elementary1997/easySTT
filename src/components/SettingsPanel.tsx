@@ -6,6 +6,8 @@ import { AppConfig, DEFAULT_CONFIG, loadConfig, saveConfig } from "../lib/store"
 import PluginsTab from "./PluginsTab";
 import "./SettingsPanel.css";
 
+type Microphone = { id: string; name: string; isDefault: boolean; aliases: string[] };
+
 type Tab = "general" | "look" | "backend" | "hotkey" | "plugins";
 
 
@@ -52,7 +54,9 @@ export default function SettingsPanel() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [tab, setTab] = useState<Tab>("general");
   const [saved, setSaved] = useState(false);
-  const [microphones, setMicrophones] = useState<string[]>([]);
+  const [microphones, setMicrophones] = useState<Microphone[]>([]);
+  const [microphoneError, setMicrophoneError] = useState("");
+  const [microphonesLoading, setMicrophonesLoading] = useState(false);
   const [cloudTestStatus, setCloudTestStatus] = useState("");
   const [cloudruModelList, setCloudruModelList] = useState<string[]>([]);
   const [cloudTesting, setCloudTesting] = useState(false);
@@ -80,9 +84,28 @@ export default function SettingsPanel() {
     setModelExistMap(Object.fromEntries(entries));
   }, []);
 
+  const refreshMicrophones = useCallback(async () => {
+    setMicrophonesLoading(true);
+    setMicrophoneError("");
+    try {
+      const devices = await invoke<Microphone[]>("list_microphones");
+      setMicrophones(devices);
+    } catch (error) {
+      setMicrophoneError(`Не удалось получить микрофоны: ${String(error)}`);
+    } finally {
+      setMicrophonesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Migrate previously saved ALSA names to the same sound-server microphone.
+    const selected = microphones.find((m) => m.aliases.includes(config.micDeviceName));
+    if (selected) setConfig((current) => ({ ...current, micDeviceName: selected.id }));
+  }, [microphones, config.micDeviceName]);
+
   useEffect(() => {
     loadConfig().then(setConfig);
-    invoke<string[]>("list_microphones").then(setMicrophones).catch(() => {});
+    void refreshMicrophones();
     invoke<string>("get_local_accel_info").catch(() => {});
     invoke<string>("get_models_dir").then(setModelsDir).catch(() => {});
     invoke<ModelInfo[]>("get_model_catalog").then((catalog) => {
@@ -90,7 +113,7 @@ export default function SettingsPanel() {
       refreshModelExistence(catalog);
     }).catch(() => {});
     autostartIsEnabled().then(setAutostartEnabled).catch(() => {});
-  }, [refreshModelExistence]);
+  }, [refreshModelExistence, refreshMicrophones]);
 
   // Listen for download progress/done/error events
   useEffect(() => {
@@ -269,6 +292,8 @@ export default function SettingsPanel() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [hotkeyCapturing, cancelCapture, update]);
 
+  const defaultMicrophone = microphones.find((microphone) => microphone.isDefault);
+
   return (
     <div className="settings">
       <div className="settings-titlebar">
@@ -294,12 +319,24 @@ export default function SettingsPanel() {
             <label className="field">
               <span className="field-label">Микрофон</span>
               <select value={config.micDeviceName} onChange={(e) => update("micDeviceName", e.target.value)}>
-                <option value="">По умолчанию</option>
+                <option value="">{defaultMicrophone
+                  ? `Системный микрофон (${defaultMicrophone.name})`
+                  : "Системный микрофон"}</option>
+                {config.micDeviceName && !microphones.some((m) => m.id === config.micDeviceName) && (
+                  <option value={config.micDeviceName}>Выбранный микрофон недоступен</option>
+                )}
                 {microphones.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
             </label>
+            <button type="button" onClick={() => void refreshMicrophones()} disabled={microphonesLoading}>
+              {microphonesLoading ? "Поиск микрофонов…" : "Обновить микрофоны"}
+            </button>
+            {microphoneError && <p role="alert">{microphoneError}</p>}
+            {!microphonesLoading && !microphoneError && microphones.length === 0 && (
+              <p>Микрофоны не найдены. Подключите микрофон и обновите список.</p>
+            )}
 
             <label className="field">
               <span className="field-label">Язык распознавания</span>

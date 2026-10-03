@@ -2,52 +2,33 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./RecordingIndicator.css";
 
-type State = "listening" | "recording" | "transcribing" | "command";
+type State = "recording" | "transcribing" | "done" | "error";
 
 export default function RecordingIndicator() {
-  const [state, setState] = useState<State>("listening");
+  const [state, setState] = useState<State>("recording");
 
   useEffect(() => {
-    const subs = [
-      listen("always-on-vad",            () => setState("listening")),
-      listen("ptt-pressed",              () => setState("recording")),
-      listen("ptt-released",             () => setState("transcribing")),
-      listen("transcription-done",       () => setState("transcribing")),
-      listen("transcription-error",      () => setState("transcribing")),
-      listen("transcription-cancelled",  () => setState("transcribing")),
-      listen("plugin-command",           () => setState("command")),
-    ];
-    return () => { subs.forEach(p => p.then(u => u())); };
+    // Capture success and transcription lifecycle come from the backend;
+    // a key press alone does not mean that a microphone is recording.
+    const subscription = listen<State>("recording-status", (event) => {
+      if (["recording", "transcribing", "done", "error"].includes(event.payload)) setState(event.payload);
+    });
+    return () => { void subscription.then((unlisten) => unlisten()); };
   }, []);
 
+  const labels: Record<State, string> = {
+    recording: "Запись…", transcribing: "Обработка…", done: "Готово", error: "Ошибка обработки",
+  };
+
   return (
-    <div className="indicator">
-      {state === "listening" && (
-        <>
-          <span className="indicator-wave" />
-          <span>Слушаю...</span>
-        </>
-      )}
-      {state === "recording" && (
-        <>
-          <span className="indicator-dot" />
-          <span>Запись...</span>
-        </>
-      )}
-      {state === "transcribing" && (
-        <>
-          <div className="indicator-spinner">
-            <span /><span /><span />
-          </div>
-          <span>Обработка...</span>
-        </>
-      )}
-      {state === "command" && (
-        <>
-          <span className="indicator-check" />
-          <span>Команда выполнена</span>
-        </>
-      )}
+    <div className="indicator" role="status" aria-live="polite" aria-label={labels[state]}>
+      {state === "recording" && <><span className="indicator-dot" /><span>Запись…</span></>}
+      {state === "transcribing" && <>
+        <div className="indicator-spinner"><span /><span /><span /></div>
+        <span>Обработка…</span>
+      </>}
+      {state === "done" && <><span className="indicator-check" /><span>Готово</span></>}
+      {state === "error" && <><span className="indicator-error" /><span>Ошибка обработки</span></>}
     </div>
   );
 }

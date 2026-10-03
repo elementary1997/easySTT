@@ -1,6 +1,6 @@
 {
   "productName": "easySTT",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.easystt.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -47,7 +47,12 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "focusable": false,
+        "minWidth": 180,
+        "minHeight": 44,
+        "maxWidth": 180,
+        "maxHeight": 44
       },
       {
         "label": "settings",
@@ -95,7 +100,8 @@
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0",
           "libayatana-appindicator3-1",
-          "libxdo3"
+          "libxdo3",
+          "libpulse0"
         ],
         "section": "utils",
         "priority": "optional",
