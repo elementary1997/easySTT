@@ -41,8 +41,10 @@ jobs:
           # This is scoped to the isolated CI smoke test, never the shipped app.
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1'
         run: |
-          xvfb-run -a dbus-run-session -- python3 scripts/debian_smoke.py src-tauri/target/release/easystt
-          xvfb-run -a dbus-run-session -- python3 scripts/debian_audio_smoke.py src-tauri/target/release/easystt
+          # Desktop services (especially PulseAudio) expect a regular user.
+          useradd --create-home --shell /bin/bash smoke
+          runuser -u smoke -- xvfb-run -a dbus-run-session -- python3 scripts/debian_smoke.py src-tauri/target/release/easystt
+          runuser -u smoke -- xvfb-run -a dbus-run-session -- python3 scripts/debian_audio_smoke.py src-tauri/target/release/easystt
       - uses: actions/upload-artifact@v4
         with:
           name: easystt-debian13-vulkan-deb

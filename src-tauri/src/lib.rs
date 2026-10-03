@@ -1,5 +1,7 @@
 mod agent_api;
 mod audio;
+#[cfg(target_os = "linux")]
+mod linux_indicator;
 mod config;
 mod inject;
 mod plugin_manager;
@@ -95,6 +97,8 @@ fn show_indicator(app: &AppHandle, status: &str) -> u64 {
             // GTK only realizes hidden windows on first show; apply the pill's
             // size and input shape after that instead of GTK's 200x200 default.
             let _ = window.set_size(tauri::LogicalSize::new(180.0, 44.0));
+            #[cfg(target_os = "linux")]
+            linux_indicator::apply(&window);
             #[cfg(not(target_os = "linux"))]
             let _ = window.set_ignore_cursor_events(true);
             if let Some(monitor) = monitor {

@@ -1,6 +1,6 @@
 [package]
 name = "easystt"
-version = "0.1.2"
+version = "0.1.3"
 description = "Speech to text utility"
 authors = []
 license = ""

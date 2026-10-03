@@ -69,6 +69,61 @@ def status_text(text):
     return False
 
 
+def assert_rounded_window():
+    """Inspect the native bounding shape, independent of CSS or a compositor."""
+    class Rectangle(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short),
+                    ("width", ctypes.c_ushort), ("height", ctypes.c_ushort)]
+
+    x = ctypes.CDLL("libX11.so.6")
+    shape = ctypes.CDLL("libXext.so.6")
+    x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x.XOpenDisplay.restype = ctypes.c_void_p
+    x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x.XDefaultRootWindow.restype = ctypes.c_ulong
+    x.XQueryTree.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong),
+                            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),
+                            ctypes.POINTER(ctypes.c_uint)]
+    x.XFetchName.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char_p)]
+    x.XFree.argtypes = [ctypes.c_void_p]
+    x.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    shape.XShapeGetRectangles.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int,
+                                        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+    shape.XShapeGetRectangles.restype = ctypes.POINTER(Rectangle)
+    display = x.XOpenDisplay(None)
+    assert display, "Cannot open test display"
+    children = ctypes.POINTER(ctypes.c_ulong)()
+    try:
+        root, parent, count = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_uint()
+        assert x.XQueryTree(display, x.XDefaultRootWindow(display), ctypes.byref(root),
+                            ctypes.byref(parent), ctypes.byref(children), ctypes.byref(count))
+        for index in range(count.value):
+            name = ctypes.c_char_p()
+            x.XFetchName(display, children[index], ctypes.byref(name))
+            title = name.value
+            if name:
+                x.XFree(name)
+            if title != b"easySTT Recording":
+                continue
+            length, ordering = ctypes.c_int(), ctypes.c_int()
+            rectangles = shape.XShapeGetRectangles(display, children[index], 0,
+                                                    ctypes.byref(length), ctypes.byref(ordering))
+            try:
+                def contains(px, py):
+                    return any(r.x <= px < r.x + r.width and r.y <= py < r.y + r.height
+                               for r in rectangles[:length.value])
+                assert contains(90, 22), "Indicator center was clipped"
+                assert all(not contains(px, py) for px, py in [(0, 0), (179, 0), (0, 43), (179, 43)]), "Opaque square indicator corners"
+                return True
+            finally:
+                x.XFree(rectangles)
+        raise AssertionError("Native indicator window missing")
+    finally:
+        if children:
+            x.XFree(children)
+        x.XCloseDisplay(display)
+
+
 def main():
     binary = str(Path(sys.argv[1]).resolve())
     with tempfile.TemporaryDirectory(prefix="easystt-audio-") as directory:
@@ -127,6 +182,7 @@ def main():
                         # GTK applies resize/move asynchronously on its first realization.
                         # xvfb-run's default screen is 1280x1024.
                         extents = wait_for(bottom_center, "Indicator did not settle at bottom center", timeout=5)
+                        assert_rounded_window()
                         # The null sink's first monitor block can take 2 seconds.
                         time.sleep(3.5)
                     finally:
@@ -137,7 +193,7 @@ def main():
                     if session == 2:
                         wait_for(lambda: not visible_frames(), "Completed indicator stayed visible")
                 assert process.poll() is None
-                print("PASS: named input, excluded monitors, shared capture, bottom-center recording/processing and auto-hide")
+                print("PASS: named input, excluded monitors, shared capture, rounded bottom-center recording/processing and auto-hide")
             except Exception:
                 print("Window geometry:", [(node.get_name(), tuple(getattr(node.get_component_iface().get_extents(Atspi.CoordType.SCREEN), axis) for axis in ("x", "y", "width", "height"))) for node in nodes(application()) if node.get_role_name() == "frame"], file=sys.stderr)
                 print("Accessible UI:", [(node.get_role_name(), node.get_name(), node.get_state_set().contains(Atspi.StateType.SHOWING)) for node in nodes(application())], file=sys.stderr)
@@ -159,4 +215,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            message = str(error).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error::{type(error).__name__}: {message}", flush=True)
+        raise
